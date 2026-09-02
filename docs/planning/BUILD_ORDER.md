@@ -417,7 +417,7 @@ known-answer reference case.
 
 ---
 
-### [ ] Step 14 — First end-to-end run, classical only
+### [x] Step 14 — First end-to-end run, classical only
 
 **Goal:** the study exists. This is the milestone.
 
