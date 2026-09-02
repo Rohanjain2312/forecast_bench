@@ -286,7 +286,7 @@ never be recomputed and why.
 
 ---
 
-### [ ] Step 8 — Data protocol documentation
+### [x] Step 8 — Data protocol documentation
 
 **Goal:** write down the point-in-time rules while they are fresh.
 
