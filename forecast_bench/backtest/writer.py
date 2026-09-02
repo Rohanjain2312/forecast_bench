@@ -151,3 +151,39 @@ class ForecastWriter:
         frame.to_parquet(path, index=False)
         logger.info("Wrote %d forecast rows to %s", len(frame), path)
         return path
+
+
+def write_results(frame: pd.DataFrame, directory: Path) -> Path:
+    """Write an already-tidy results frame, naming the file from its own columns.
+
+    Args:
+        frame: A frame in :data:`SCHEMA`, carrying ``series``, ``arm`` and ``cadence``.
+        directory: Destination directory, created if absent.
+
+    Returns:
+        Path to the written file.
+
+    Raises:
+        ValueError: If the frame is empty, or mixes more than one (series, arm, cadence)
+            combination, which would produce a filename that lies about its contents.
+    """
+    if frame.empty:
+        raise ValueError("Refusing to write an empty results frame")
+
+    keys = {
+        column: sorted(frame[column].unique())
+        for column in ("series", "arm", "cadence")
+    }
+    mixed = {column: values for column, values in keys.items() if len(values) != 1}
+    if mixed:
+        raise ValueError(
+            f"Results frame mixes multiple values for {mixed}; write one "
+            "(series, arm, cadence) combination per file."
+        )
+
+    directory.mkdir(parents=True, exist_ok=True)
+    series, arm, cadence = (keys[column][0] for column in ("series", "arm", "cadence"))
+    path = directory / f"{series}_arm{arm}_{cadence}.parquet"
+    frame.to_parquet(path, index=False)
+    logger.info("Wrote %d forecast rows to %s", len(frame), path)
+    return path

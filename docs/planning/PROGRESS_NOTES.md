@@ -176,3 +176,70 @@ allowlist's job, not a correlation threshold's.
 
 137 matches the figure in `DECISIONS.md` D6 exactly. The first fold's origin falls in the
 previous calendar year, so block 2014 contains exactly one fold under the matched cadence.
+
+## Step 14 — First end-to-end run (2026-09-02)
+
+Arm A, matched cadence, both series. 137 folds on SPY (33 s), 136 on `DGS10` (35 s). Under
+the matched cadence ARIMA refits 13 times rather than 137, so the AIC grid is cheap.
+
+### Registered prediction 1 — HOLDS
+
+*"On `DGS10`, no model will beat random walk by a meaningful margin at any horizon.
+Expected skill scores in the range -0.05 to +0.05."*
+
+Every WQL skill score on `DGS10` falls in **[-0.028, +0.031]**, comfortably inside the
+registered band. The best any model manages is SeasonalNaive at h=1 with +0.031; ARIMA and
+AR(1) are both marginally negative at every horizon.
+
+### Registered prediction 2 — FAILS, and the cause is our implementation
+
+*"On SPY log-RV, HAR or LogHAR will beat zero-shot Chronos-2 at h=1 and h=5"* — and Step 14's
+weaker precondition, that HAR/LogHAR be clearly the strongest classical model.
+
+Observed WQL skill versus random walk on SPY log-RV:
+
+| Model | h=1 | h=5 | h=21 |
+|---|---|---|---|
+| ARIMA | **+0.074** | +0.129 | **+0.157** |
+| LogHAR | +0.058 | **+0.136** | -0.101 |
+| HAR | -0.070 | -0.143 | -0.290 |
+
+LogHAR leads only at h=5. HAR is worse than a random walk everywhere.
+
+**This is not HAR losing. It is our uncertainty quantification being wrong**, and the
+coverage/width pair is what exposed it:
+
+| Model | h | coverage 80% | width 80% | coverage 95% | width 95% |
+|---|---|---|---|---|---|
+| LogHAR | 1 | 0.438 | 1.98 | 0.679 | 3.03 |
+| LogHAR | 21 | **1.000** | **9.07** | **1.000** | **13.86** |
+| RandomWalk | 21 | 0.599 | 3.05 | 0.891 | 4.86 |
+
+At h=21 LogHAR's intervals capture **100%** of actuals at a width three times the random
+walk's. That is the exact failure mode `interval_coverage_and_width` exists to make visible:
+coverage bought with useless width. Meanwhile LogHAR's *point* forecast beats the random
+walk at every horizon (MAE skill +0.094 / +0.117 / +0.129). Good point forecast, unusable
+intervals.
+
+**Root cause.** `scaled_residual_quantiles` widens one-step residual quantiles by
+`sqrt(h)`, as specified in `IMPLEMENTATION_PLAN.md` §4a. That scaling is correct for an
+*integrated* process, where forecast error variance grows linearly in h. Log realized
+variance is strongly **mean-reverting** — which is the entire reason HAR exists — so its
+h-step error variance saturates. Measured on the 2000-2014 training window:
+
+| h | std of h-step change | ratio vs h=1 | `sqrt(h)` assumes |
+|---|---|---|---|
+| 1 | 0.9446 | 1.00 | 1.00 |
+| 5 | 1.0358 | 1.10 | 2.24 |
+| 21 | 1.1578 | **1.23** | **4.58** |
+| 63 | 1.2703 | 1.34 | 7.94 |
+
+The intervals are inflated by a factor of roughly 3.7 at h=21. LogHAR's own MAE confirms it
+independently: 1.180 at h=1 and 1.205 at h=21, a ratio of 1.02, not 4.58.
+
+ARIMA is unaffected because it takes its intervals from `get_forecast().conf_int()`, so its
+spread comes from the fitted dynamics rather than from an assumption imposed on top.
+
+`HAR` (variance space) fails worse for a second, compounding reason: additive residual
+quantiles in variance space are then log-transformed, and variance is strongly right-skewed,
+so an additive symmetric offset is the wrong shape before the transform.
