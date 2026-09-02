@@ -9,7 +9,8 @@ failure and forces the marker to be removed deliberately rather than left to rot
 
 The reason string on each marker names the build step at which it becomes real:
 
-    checks 1-3  ->  Step 11 (the runner)
+    check 1     ->  Step 10 (the splitter) - live, markers removed
+    checks 2-3  ->  Step 11 (the runner)
     check 4     ->  Step 12 (the naive and classical models)
     check 5     ->  Step 13 (evaluation/regimes.py)
 
@@ -31,7 +32,6 @@ STEP_13 = "evaluation/regimes.py lands in build Step 13"
 # --- Check 1: fold boundaries ----------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=STEP_11)
 def test_every_fold_trains_only_at_or_before_its_origin(
     synthetic_series, tiny_fold_spec
 ) -> None:
@@ -53,7 +53,6 @@ def test_every_fold_trains_only_at_or_before_its_origin(
         assert len(fold.forecast_index) == MAX_HORIZON
 
 
-@pytest.mark.xfail(strict=True, reason=STEP_11)
 def test_forecast_windows_never_overlap(synthetic_series, tiny_fold_spec) -> None:
     """No observation appears in two forecast windows.
 
