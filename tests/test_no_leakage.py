@@ -3,16 +3,9 @@
 Five checks, from IMPLEMENTATION_PLAN.md section 3.5. Written **before** the harness so
 that the harness is built against them rather than around them.
 
-Checks 1-3 are live. Checks 4 and 5 remain ``xfail(strict=True)`` because the modules they
-import land in later build steps; ``strict=True`` means that when a guard starts passing,
-the xfail becomes a failure and forces the marker to be removed deliberately rather than
-left to rot.
-
-The build step at which each check becomes real:
-
-    checks 1-3  ->  live as of Step 11; the harness enforces them
-    check 4     ->  Step 12 (the naive and classical models)
-    check 5     ->  Step 13 (evaluation/regimes.py)
+All five checks are live and enforced as of build Step 13. Each was written before the
+module it guards and carried ``xfail(strict=True)`` until that module landed, so every one
+of them has been watched turning from failing to passing.
 
 **This file must never be weakened or skipped to make a run pass.** If a guard fails, the
 run is wrong, not the guard.
@@ -23,10 +16,6 @@ import pandas as pd
 import pytest
 
 from forecast_bench.config import MAX_HORIZON
-
-STEP_12 = "naive and classical models land in build Step 12"
-STEP_13 = "evaluation/regimes.py lands in build Step 13"
-
 
 # --- Check 1: fold boundaries ----------------------------------------------------------
 
@@ -183,7 +172,6 @@ def test_canary_leak_is_detected_by_the_fold_guard(leaky_frame, tiny_fold_spec) 
 # --- Check 4: per-fold recomputation ---------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=STEP_12)
 def test_mase_denominator_and_rw_quantiles_are_recomputed_each_fold(
     synthetic_frame, tiny_fold_spec
 ) -> None:
@@ -206,7 +194,7 @@ def test_mase_denominator_and_rw_quantiles_are_recomputed_each_fold(
 
         model = RandomWalk()
         model.fit(train, origin=fold.origin)
-        forecast = model.predict(horizon=MAX_HORIZON)
+        forecast = model.predict(horizon=MAX_HORIZON, index=fold.forecast_index)
         spreads.append(
             float(forecast.quantiles[0.975][-1] - forecast.quantiles[0.025][-1])
         )
@@ -218,7 +206,6 @@ def test_mase_denominator_and_rw_quantiles_are_recomputed_each_fold(
 # --- Check 5: frozen regime thresholds -------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=STEP_13)
 def test_regime_thresholds_match_the_frozen_config() -> None:
     """The loaded thresholds equal the committed values, asserted at import time.
 
