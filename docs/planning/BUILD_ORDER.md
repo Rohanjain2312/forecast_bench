@@ -328,7 +328,7 @@ series, a tiny 5-fold set, a stub `Forecaster` that returns constants.
 
 ---
 
-### [ ] Step 10 — Forecaster protocol and splitter
+### [x] Step 10 — Forecaster protocol and splitter
 
 **Create `forecast_bench/backtest/protocol.py`** — `QuantileForecast` frozen dataclass and
 `Forecaster` Protocol, exactly as specified in `IMPLEMENTATION_PLAN.md` §3.1, including the
