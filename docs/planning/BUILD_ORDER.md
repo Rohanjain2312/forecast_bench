@@ -396,7 +396,7 @@ non-decreasing quantiles at each step (a crossing quantile is a bug).
 
 ---
 
-### [ ] Step 13 — Metrics, statistics, regimes, aggregation
+### [x] Step 13 — Metrics, statistics, regimes, aggregation
 
 **Create** `evaluation/{metrics,stats,regimes,aggregate}.py` per §5.
 
