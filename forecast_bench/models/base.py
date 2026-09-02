@@ -8,8 +8,10 @@ make the panel incomparable:
    ``_quantile_paths`` and never touch that bookkeeping.
 2. **Quantile construction.** A model that emits a point forecast plus a normal
    approximation is not comparable to one that emits an empirical predictive distribution.
-   The helpers here are the two sanctioned ways to turn a point model into a quantile
-   model, and both are recomputed per fold.
+   The two helpers here are the sanctioned ways to turn a point model into a quantile
+   model, and both are recomputed per fold. Both *measure* the spread from data rather
+   than assuming a shape for it — see :func:`stepwise_residual_quantiles` for what went
+   wrong when one of them assumed instead.
 """
 
 import logging
@@ -84,37 +86,53 @@ def empirical_change_quantiles(
     return paths
 
 
-def scaled_residual_quantiles(
+def stepwise_residual_quantiles(
     residuals: np.ndarray,
-    horizon: int,
     levels: list[float] = QUANTILE_GRID,
 ) -> dict[float, np.ndarray]:
-    """One-step residual quantiles widened by ``sqrt(h)``.
-
-    The standard way to give an OLS-style point model a predictive distribution when the
-    residuals are approximately serially uncorrelated: the h-step forecast error variance
-    accumulates roughly linearly, so the standard deviation grows as ``sqrt(h)``.
+    """Quantiles of a model's own h-step-ahead residuals, measured per step.
 
     Args:
-        residuals: In-sample one-step residuals from the training window.
-        horizon: Number of steps to produce.
+        residuals: Shape ``(horizon, n_origins)``. Row ``h - 1`` holds the model's
+            h-step-ahead errors across training-window origins. NaNs are ignored.
         levels: Quantile levels.
 
     Returns:
-        Mapping of level to an offset path, length ``horizon``.
+        Mapping of level to an offset path of length ``horizon``.
+
+    Raises:
+        ValueError: If the input is not a matrix, or a step has no finite residuals.
 
     Note:
+        This replaced a ``sqrt(h)`` widening of one-step residuals, which assumes forecast
+        error variance grows linearly in the horizon. That holds for an *integrated*
+        process and fails badly for a mean-reverting one. Measured on SPY log realized
+        variance over 2000-2014, the spread of h-step changes grows 1.23x by h=21 where
+        ``sqrt(h)`` assumes 4.58x, so HAR's 21-step intervals came out roughly 3.7 times
+        too wide and covered 100% of actuals. See docs/planning/PROGRESS_NOTES.md Step 14.
+
+        Measuring the spread instead of assuming it also captures asymmetry, which matters
+        for :class:`~forecast_bench.models.classical.har.HAR`, whose residuals live in
+        right-skewed variance space.
+
         Recomputed per fold. A residual quantile cached across folds is a fitted object
-        that crossed a fold boundary, which is exactly what
-        ``tests/test_no_leakage.py`` check 4 looks for.
+        that crossed a fold boundary, which ``tests/test_no_leakage.py`` check 4 looks for.
     """
     residuals = np.asarray(residuals, dtype=float)
-    residuals = residuals[np.isfinite(residuals)]
-    if residuals.size == 0:
-        raise ValueError("No finite residuals to build quantiles from.")
+    if residuals.ndim != 2:
+        raise ValueError(
+            f"Expected a (horizon, n_origins) matrix, got shape {residuals.shape}"
+        )
 
-    scale = np.sqrt(np.arange(1, horizon + 1, dtype=float))
-    return {level: float(np.quantile(residuals, level)) * scale for level in levels}
+    horizon = residuals.shape[0]
+    paths = {level: np.empty(horizon) for level in levels}
+    for step in range(horizon):
+        finite = residuals[step][np.isfinite(residuals[step])]
+        if finite.size == 0:
+            raise ValueError(f"No finite residuals at step {step + 1}")
+        for level in levels:
+            paths[level][step] = float(np.quantile(finite, level))
+    return paths
 
 
 class BaseForecaster(ABC):

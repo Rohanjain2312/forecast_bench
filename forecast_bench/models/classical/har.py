@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 from forecast_bench.config import QUANTILE_GRID
-from forecast_bench.models.base import BaseForecaster, scaled_residual_quantiles
+from forecast_bench.models.base import BaseForecaster, stepwise_residual_quantiles
 
 #: Averaging windows: daily, weekly, monthly. The 22-day component is why the study's
 #: longest horizon is 21 trading days.
@@ -134,8 +134,57 @@ class LogHAR(BaseForecaster):
             history.append(prediction)
         return path
 
+    def _h_step_residuals(self, horizon: int) -> np.ndarray:
+        """Measure the model's own h-step-ahead errors across the training window.
+
+        Iterates the fitted recursion forward from every usable training origin at once,
+        so the spread of the forecast error is measured rather than assumed.
+
+        Args:
+            horizon: Number of steps to measure.
+
+        Returns:
+            Shape ``(horizon, n_origins)``. Entry ``[h - 1, i]`` is
+            ``actual[origin_i + h] - forecast``, or NaN where the origin runs off the end.
+
+        Note:
+            In-sample: the coefficients come from the whole training window, so these
+            errors are mildly optimistic. They are still fold-local — nothing outside the
+            fold is touched — and they are enormously better calibrated than assuming a
+            variance growth law that the series does not obey.
+        """
+        values = np.asarray(self._history, dtype=float)
+        longest = max(self.lags)
+        n = len(values)
+
+        origins = np.arange(longest, n - 1)
+        if origins.size == 0:
+            raise ValueError(
+                f"{self.model_id}: training window too short for residuals"
+            )
+
+        # state[:, 0] is the most recent value for each origin, state[:, 1] the one before.
+        offsets = np.arange(longest)
+        state = values[origins[:, None] - offsets[None, :]]
+
+        residuals = np.full((horizon, origins.size), np.nan)
+        for step in range(1, horizon + 1):
+            features = np.column_stack(
+                [np.ones(origins.size)]
+                + [state[:, :lag].mean(axis=1) for lag in self.lags]
+            )
+            predictions = features @ self._coefficients
+
+            targets = origins + step
+            usable = targets < n
+            residuals[step - 1, usable] = values[targets[usable]] - predictions[usable]
+
+            state = np.column_stack([predictions, state[:, :-1]])
+
+        return residuals
+
     def _quantile_paths(self, horizon: int) -> dict[float, np.ndarray]:
-        """Widen the iterated point path by ``sqrt(h)``-scaled residual quantiles.
+        """Widen the iterated point path by the model's measured h-step error quantiles.
 
         Args:
             horizon: Number of steps to forecast.
@@ -144,7 +193,9 @@ class LogHAR(BaseForecaster):
             Mapping of level to a path, in log space.
         """
         path = self._iterate(horizon)
-        offsets = scaled_residual_quantiles(self._residuals, horizon, QUANTILE_GRID)
+        offsets = stepwise_residual_quantiles(
+            self._h_step_residuals(horizon), QUANTILE_GRID
+        )
         return {level: path + offsets[level] for level in QUANTILE_GRID}
 
 
@@ -185,7 +236,9 @@ class HAR(LogHAR):
             Mapping of level to a path, in log space.
         """
         path = self._iterate(horizon)
-        offsets = scaled_residual_quantiles(self._residuals, horizon, QUANTILE_GRID)
+        offsets = stepwise_residual_quantiles(
+            self._h_step_residuals(horizon), QUANTILE_GRID
+        )
 
         # An additive residual can push a variance forecast non-positive, and log() of
         # that is -inf. Floor at the smallest positive variance seen in this fold's

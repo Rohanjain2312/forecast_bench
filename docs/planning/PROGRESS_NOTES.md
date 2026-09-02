@@ -243,3 +243,52 @@ spread comes from the fitted dynamics rather than from an assumption imposed on 
 `HAR` (variance space) fails worse for a second, compounding reason: additive residual
 quantiles in variance space are then log-transformed, and variance is strongly right-skewed,
 so an additive symmetric offset is the wrong shape before the transform.
+
+### Fix applied: measured h-step residuals replace the `sqrt(h)` assumption
+
+Agreed with the user, 2026-09-02. `scaled_residual_quantiles` is replaced by
+`stepwise_residual_quantiles`, and HAR/LogHAR now measure their own h-step-ahead errors by
+iterating the fitted recursion forward from every training origin (vectorised across
+origins). Effect on SPY log-RV:
+
+| | before | after |
+|---|---|---|
+| LogHAR h=21 coverage 80% | 1.000 at width 9.07 | 0.555 at width 2.44 |
+| LogHAR h=21 WQL skill | -0.101 | **+0.101** |
+| HAR h=21 WQL skill | -0.290 | +0.026 |
+
+Sanity check 2 still does not hold, but it now fails for a real reason rather than an
+implementation one: ARIMA leads HAR/LogHAR on WQL at all three horizons
+(+0.074 / +0.129 / +0.157 against +0.058 / +0.081 / +0.101). Whether that survives the
+next finding is not yet known.
+
+### A second, larger bug: the matched cadence was freezing conditioning data, not just parameters
+
+Found by checking a property that should be true by definition — the random walk's median
+forecast must equal the value at the forecast origin. It did not.
+
+`IMPLEMENTATION_PLAN.md` §3.4's runner pseudocode builds and fits a model only on refit
+folds and reuses the cached object otherwise. Because the cached object also holds its
+*conditioning data*, every model under the matched cadence forecasts from whatever it last
+saw at a block boundary. Measured on SPY log-RV, matched cadence, h=1:
+
+| | value |
+|---|---|
+| Forecasts using a stale last value | **124 of 137** |
+| Age of the carried-forward value | median **84 trading days**, max **231** |
+| RandomWalk MAE, as run | 1.302 |
+| RandomWalk MAE, conditioning on the origin | **0.848** |
+
+The baseline is 54% worse than it should be, and every skill score in the headline table is
+quoted against it. The same staleness applies to ARIMA, HAR and AR(1).
+
+**Why this is a bug and not a design choice.** D5 defines the cadences in terms of "refit"
+and "retrain" — parameter estimation. It says the matched cadence exists so that every model
+class gets "the same information-refresh rate and the comparison is therefore about model
+quality". Conditioning staleness is not model quality. Decisively, a zero-shot foundation
+model has **no parameters to refit at all**: gating conditioning would hand Chronos-2 a
+four-month-old context window and call the result a benchmark of Chronos. A random walk's
+last value is state, not a fitted parameter.
+
+The distinction the harness needs is between **parameters**, which the cadence governs, and
+**conditioning data**, which must always run to the fold's origin.
