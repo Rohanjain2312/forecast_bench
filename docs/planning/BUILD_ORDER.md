@@ -449,7 +449,7 @@ Print the two sanity-check results and:
 
 ---
 
-### [ ] Step 15 — Foundation models, zero-shot, local
+### [x] Step 15 — Foundation models, zero-shot, local
 
 **Create** `models/foundation/{chronos2,chronos_bolt,hub}.py`. Zero-shot paths only.
 Chronos-2 via `Chronos2Pipeline` (not `AutoModelForSeq2SeqLM`). CPU device.
