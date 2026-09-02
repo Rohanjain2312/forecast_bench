@@ -21,6 +21,8 @@ from forecast_bench.models.classical.ar1 import AR1
 from forecast_bench.models.classical.arima import ARIMA
 from forecast_bench.models.classical.har import HAR, LogHAR
 from forecast_bench.models.classical.sarimax import SARIMAX
+from forecast_bench.models.foundation.chronos2 import Chronos2ZeroShot
+from forecast_bench.models.foundation.chronos_bolt import ChronosBoltZeroShot
 from forecast_bench.models.naive import RandomWalk, SeasonalNaive
 
 logger = logging.getLogger(__name__)
@@ -44,11 +46,22 @@ _SERIES_SPECIFIC: dict[str, dict[str, type]] = {
 #: Models registered only for the covariate-informed arm.
 _ARM_B_ONLY = {"SARIMAX": SARIMAX}
 
+#: Pretrained foundation models used without adaptation, registered for every series.
+#:
+#: Kept in their own group because their results carry a caveat the classical models do
+#: not: zero-shot numbers on pre-October-2025 origins may be contaminated by pretraining
+#: exposure. See DECISIONS.md D10-G4 and docs/limitations.md.
+_FOUNDATION_ZERO_SHOT = {
+    "Chronos2-ZeroShot": Chronos2ZeroShot,
+    "ChronosBolt-ZeroShot": ChronosBoltZeroShot,
+}
+
 
 def classical_panel(
     series: str,
     arm: str = "A",
     target_column: str | None = None,
+    include_foundation: bool = False,
 ) -> dict[str, Callable[[], Forecaster]]:
     """Build the naive and classical panel for one series and arm.
 
@@ -56,6 +69,7 @@ def classical_panel(
         series: ``"spy_logrv"`` or ``"dgs10"``.
         arm: ``"A"`` (univariate) or ``"B"`` (covariate-informed).
         target_column: Column holding the target. Defaults to ``series``.
+        include_foundation: Add the zero-shot foundation models to the panel.
 
     Returns:
         Mapping of model id to a zero-argument builder. A builder is called afresh on every
@@ -77,6 +91,8 @@ def classical_panel(
     registered = {**_SHARED, **_SERIES_SPECIFIC[series]}
     if arm == "B":
         registered = {**registered, **_ARM_B_ONLY}
+    if include_foundation:
+        registered = {**registered, **_FOUNDATION_ZERO_SHOT}
 
     return {
         model_id: _builder(model_class, column)
@@ -108,4 +124,14 @@ def all_registered_model_classes() -> dict[str, type]:
     for specific in _SERIES_SPECIFIC.values():
         combined.update(specific)
     combined.update(_ARM_B_ONLY)
+    combined.update(_FOUNDATION_ZERO_SHOT)
     return combined
+
+
+def foundation_model_ids() -> list[str]:
+    """Model ids whose results carry the pretraining-contamination caveat.
+
+    Returns:
+        The zero-shot foundation model ids, sorted.
+    """
+    return sorted(_FOUNDATION_ZERO_SHOT)

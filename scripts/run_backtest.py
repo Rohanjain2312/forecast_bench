@@ -51,6 +51,7 @@ def run(
     cadence: str = "matched",
     arm: str = "A",
     horizon: int = MAX_HORIZON,
+    include_foundation: bool = False,
 ) -> pd.DataFrame:
     """Run one backtest configuration end to end.
 
@@ -59,6 +60,7 @@ def run(
         cadence: ``"matched"`` or ``"native"``.
         arm: ``"A"`` (univariate) or ``"B"`` (covariate-informed).
         horizon: Steps forecast per fold.
+        include_foundation: Add the zero-shot foundation models to the panel.
 
     Returns:
         The tidy results frame.
@@ -75,7 +77,9 @@ def run(
         folds = attach_regimes(folds, regime_series(frame["vixcls"]))
 
     data = frame[[series]] if arm == "A" else frame
-    panel = classical_panel(series, arm=arm, target_column=series)
+    panel = classical_panel(
+        series, arm=arm, target_column=series, include_foundation=include_foundation
+    )
     policy = build_cadence(cadence)
 
     logger.info(
@@ -117,6 +121,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", required=True, choices=["spy_logrv", "dgs10"])
     parser.add_argument("--cadence", default="matched", choices=["matched", "native"])
     parser.add_argument("--arm", default="A", choices=["A", "B"])
+    parser.add_argument(
+        "--with-foundation",
+        action="store_true",
+        help="Add the zero-shot foundation models to the panel.",
+    )
     return parser.parse_args()
 
 
@@ -131,7 +140,12 @@ def main() -> int:
     config = get_config()
     config.ensure_dirs()
 
-    results = run(args.config, cadence=args.cadence, arm=args.arm)
+    results = run(
+        args.config,
+        cadence=args.cadence,
+        arm=args.arm,
+        include_foundation=args.with_foundation,
+    )
 
     path = write_results(results, config.forecasts_dir)
 

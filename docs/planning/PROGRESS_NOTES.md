@@ -339,3 +339,61 @@ log-target specification predicts.
 number.** The stale conditioning made every model look better by crippling the baseline;
 the `sqrt(h)` intervals made HAR look worse than it is. Each was found by checking a
 property that had to be true by definition rather than by looking at a metric.
+
+## Step 15 — Foundation models, zero-shot (2026-09-02)
+
+Both series, Arm A, matched cadence, seven models. SPY 53 s, `DGS10` 57 s — the pipeline
+cache means the ~17 s Chronos-2 weight load happens once per process rather than once per
+parameter refit.
+
+### Chronos-Bolt cannot produce the study's tail quantiles
+
+Bolt was trained on levels 0.1-0.9 only. Requesting 0.025 and 0.975 returns its 0.1 and 0.9
+predictions unchanged, so **Bolt's 95% interval is identical to its 80% interval by
+construction**.
+
+This is left in place rather than worked around. Extrapolating tails the checkpoint was
+never trained to produce would be inventing a capability to make a number look better. It
+does cost Bolt something real on the primary metric: weighted quantile loss averages over
+all eleven levels and two of Bolt's eleven are duplicates, so it is penalised at the tails
+relative to models with genuine tail predictions. Asserted in
+`tests/test_foundation_zeroshot.py` so that a future checkpoint gaining real tails fails the
+test rather than silently invalidating the limitation text.
+
+Chronos-2 reports trained quantiles from 0.01 to 0.99, so the study grid is inside its range
+and every level is a genuine prediction.
+
+### Zero-shot results, SPY log-RV, WQL skill vs random walk
+
+| Model | h=1 | h=5 | h=21 |
+|---|---|---|---|
+| LogHAR | 0.166 | **0.219** | **0.212** |
+| ARIMA | **0.168** | 0.210 | 0.205 |
+| Chronos2-ZeroShot | 0.151 | 0.187 | 0.184 |
+| ChronosBolt-ZeroShot | 0.127 | 0.166 | 0.188 |
+
+**Registered prediction 2 holds so far:** LogHAR beats zero-shot Chronos-2 at h=1 and h=5,
+and at h=21 as well. The full check waits on the fine-tuned model at Step 18.
+
+**Registered prediction 4 is in trouble.** It says the foundation model's relative position
+improves as the horizon lengthens. The LogHAR-minus-Chronos-2 gap goes 0.015 at h=1 to 0.027
+at h=21 — it widens. Recorded now, evaluated properly at Step 18 with the fine-tuned model,
+which is what the prediction is actually about.
+
+On `DGS10`, Chronos-2 zero-shot posts the only positive skill anywhere (+0.008 at h=1), well
+inside the registered ±0.05 band. Prediction 1 continues to hold.
+
+### Contamination-free cut: 7 origins
+
+Restricting to origins after Chronos-2's 2025-11-01 release leaves **7 folds**, close to the
+~8 anticipated in DECISIONS.md D10-G4. `n_origins` is a column in the table itself, not a
+prose footnote, so no number can be quoted from it without its sample size attached. On that
+cut Chronos-2 leads at h=21 (+0.367) while LogHAR leads at h=1 and h=5 — at n=7 this is
+descriptive only and no claim rests on it.
+
+### Published to the Hub
+
+- `forecastbench-data`: both processed series plus a dataset card with `license: mit`
+- `forecastbench-chronos`: model card with `license: apache-2.0`, written **before** any
+  weights exist. Chronos is Apache 2.0 and a LoRA derivative inherits it, so a repo holding
+  weights without that field would be an unlicensed redistribution.
