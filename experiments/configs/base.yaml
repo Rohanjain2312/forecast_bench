@@ -1,0 +1,40 @@
+# Study constants — the single copy that scripts and notebooks read.
+#
+# These are DECISIONS, not configuration. They are duplicated as Python constants in
+# forecast_bench/config.py, and config.py asserts at import time that the two agree.
+# The duplication is deliberate: Python code should not have to read YAML to know the
+# quantile grid, and a silent divergence between the two would produce two different
+# studies wearing the same name.
+#
+# Changing any value here changes what the benchmark measures. See PREREGISTRATION.md §5
+# for the list of things committed to NOT changing after results exist.
+
+# Probabilistic forecasting grid (DECISIONS.md D4). Every model emits all eleven levels.
+quantile_grid: [0.025, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.975]
+
+# Forecast horizons in trading days, read off steps 1, 5 and 21 of one 21-step path
+# (DECISIONS.md D2), so all three horizons share identical folds and identical model fits.
+horizons: [1, 5, 21]
+max_horizon: 21
+
+# Fold stride. stride == max_horizon is what makes forecast windows non-overlapping,
+# which is what makes the Diebold-Mariano test in evaluation/stats.py defensible.
+# Changing this invalidates that test (DECISIONS.md D6).
+stride: 21
+
+# Context window fed to the foundation models, and the input chunk for the neural models,
+# so that context length is not a confound between model classes.
+context_length: 512
+
+# Backtest span (DECISIONS.md D6).
+train_start: "2000-01-01"
+test_start: "2015-01-01"
+test_end: "2026-06-30"
+
+random_seed: 42
+
+# Daily, market-observed FRED series that FRED does not revise. Nothing outside this list
+# may enter a model. Revised series (CPIAUCSL, UNRATE, FEDFUNDS, GS10, GS3M) are indexed
+# by reference period rather than release date, so reading them at time t reads the
+# future. See docs/data_protocol.md and DECISIONS.md D10-G1.
+non_revised_fred_allowlist: [DGS10, DGS3MO, T10Y2Y, VIXCLS, DFF]
