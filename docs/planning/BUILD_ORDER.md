@@ -348,7 +348,7 @@ years; fold count is ~137 for the configured span.
 
 ---
 
-### [ ] Step 11 — Cadence policies and the runner
+### [x] Step 11 — Cadence policies and the runner
 
 **Create `forecast_bench/backtest/cadence.py`** — `EveryFoldCadence` and
 `BlockCadence(freq="YS")` behind one interface.
