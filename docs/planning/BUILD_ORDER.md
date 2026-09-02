@@ -270,7 +270,7 @@ allowlisted series.
 
 ---
 
-### [ ] Step 7 — Freeze the regime thresholds
+### [x] Step 7 — Freeze the regime thresholds
 
 **Goal:** compute the VIX terciles once, on pre-2015 data only, and commit them as data.
 
