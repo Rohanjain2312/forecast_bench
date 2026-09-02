@@ -241,7 +241,7 @@ on a synthetic frame.
 
 ---
 
-### [ ] Step 6 — Targets and covariates
+### [x] Step 6 — Targets and covariates
 
 **Goal:** the two modelling series.
 
