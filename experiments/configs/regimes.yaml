@@ -1,0 +1,48 @@
+# ============================================================================
+#  FROZEN VIX TERCILE THRESHOLDS — NEVER RECOMPUTE THESE
+# ============================================================================
+#
+# These two numbers are DATA, not configuration. They were computed once, on
+# 2000-01-01 through 2014-12-31 only, and committed. `evaluation/regimes.py`
+# asserts against them at import time, and PREREGISTRATION.md section 5 lists
+# recomputing them as a change committed to NOT making after seeing results.
+#
+# WHY THEY MUST NOT BE RECOMPUTED
+#
+# The test span is 2015-01-01 onward. Computing terciles over the full sample
+# would let the test period's own volatility distribution define the regimes
+# that results are stratified by — the 2020 COVID spike and the 2022 rate shock
+# would move the boundaries, and every "stressed regime" number would be
+# conditioned on knowing that those events happened. That is leakage in the
+# reporting layer rather than the modelling layer, which makes it easier to
+# miss and no less invalidating.
+#
+# Keeping them in a committed YAML rather than in code means any change to them
+# shows up in a diff and has to be defended in a commit message.
+#
+# DERIVATION (recorded so the numbers are auditable, not so they are rerun)
+#
+#   series : VIXCLS (FRED, daily close, non-revised)
+#   window : 2000-01-03 -> 2014-12-31, the initial training span
+#   n      : 3774 non-missing observations
+#   method : numpy.percentile(values, [33, 67]), linear interpolation
+#   result : calm 32.99% / normal 34.00% / stressed 33.02% of the window
+#
+# Assignment uses the VIXCLS level at the forecast origin t, which is known at
+# time t, so stratification introduces no look-ahead. See DECISIONS.md D8.
+
+source_series: VIXCLS
+computed_on:
+  start: "2000-01-01"
+  end: "2014-12-31"
+  n_observations: 3774
+method: "numpy.percentile with linear interpolation"
+
+thresholds:
+  # VIX at or below this level: "calm"
+  calm_upper: 15.9
+  # VIX above calm_upper and at or below this level: "normal"
+  # VIX above this level: "stressed"
+  normal_upper: 22.5582
+
+labels: [calm, normal, stressed]
