@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from forecast_bench.backtest.protocol import QuantileForecast
 from forecast_bench.config import MAX_HORIZON, QUANTILE_GRID, RANDOM_SEED
 
 #: Length of the synthetic series, long enough to carve a realistic fold structure from.
@@ -98,8 +99,7 @@ def tiny_fold_spec() -> dict[str, object]:
 class StubForecaster:
     """A constant forecaster that records what it was fitted on.
 
-    Implements the shape that ``backtest.protocol.Forecaster`` specifies, without importing
-    it — this file predates the protocol by one build step.
+    Implements ``backtest.protocol.Forecaster``.
 
     Attributes:
         model_id: Identifier used as the results-table key.
@@ -131,19 +131,25 @@ class StubForecaster:
         self.fit_calls += 1
         self.constant = float(train.iloc[:, 0].iloc[-1])
 
-    def predict(self, horizon: int) -> dict[float, np.ndarray]:
-        """Return a flat quantile path.
+    def predict(self, horizon: int, index: pd.DatetimeIndex) -> QuantileForecast:
+        """Return a flat quantile path over the given dates.
 
         Args:
             horizon: Number of steps to forecast.
+            index: The dates being forecast.
 
         Returns:
-            Mapping of quantile level to an array of length ``horizon``.
+            A forecast whose quantiles are flat and ordered.
         """
-        return {
-            level: np.full(horizon, self.constant + (level - 0.5))
-            for level in QUANTILE_GRID
-        }
+        return QuantileForecast(
+            origin=self.fitted_on_origin,
+            index=index[:horizon],
+            quantiles={
+                level: np.full(horizon, self.constant + (level - 0.5))
+                for level in QUANTILE_GRID
+            },
+            model_id=self.model_id,
+        )
 
 
 @dataclass
@@ -159,9 +165,15 @@ class CheatingForecaster(StubForecaster):
 
     model_id: str = "CheatingForecaster"
     leak_column: str = "future_leak"
+    _leak_tail: np.ndarray | None = field(default=None, repr=False)
 
     def fit(self, train: pd.DataFrame, origin: pd.Timestamp) -> None:
-        """Read the leaked column's final value, which is the future target.
+        """Read the future path straight out of the leaked column.
+
+        Because ``future_leak[t] == target[t + MAX_HORIZON]``, the column's final
+        ``MAX_HORIZON`` rows hold ``target[origin + 1 .. origin + MAX_HORIZON]`` — the
+        exact path being forecast. Every one of those rows is dated at or before the
+        origin, so no date comparison would object.
 
         Args:
             train: Training frame for this fold.
@@ -169,7 +181,28 @@ class CheatingForecaster(StubForecaster):
         """
         super().fit(train, origin)
         if self.leak_column in train.columns:
-            self.constant = float(train[self.leak_column].iloc[-1])
+            self._leak_tail = train[self.leak_column].to_numpy(dtype=float)
+
+    def predict(self, horizon: int, index: pd.DatetimeIndex) -> QuantileForecast:
+        """Return the leaked future path, or fall back to the stub behaviour.
+
+        Args:
+            horizon: Number of steps to forecast.
+            index: The dates being forecast.
+
+        Returns:
+            A forecast that is exactly right when the leak is available.
+        """
+        if self._leak_tail is None or len(self._leak_tail) < horizon:
+            return super().predict(horizon, index)
+
+        path = self._leak_tail[-horizon:]
+        return QuantileForecast(
+            origin=self.fitted_on_origin,
+            index=index[:horizon],
+            quantiles={level: path + (level - 0.5) * 1e-9 for level in QUANTILE_GRID},
+            model_id=self.model_id,
+        )
 
 
 @pytest.fixture

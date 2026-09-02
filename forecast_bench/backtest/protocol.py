@@ -149,13 +149,25 @@ class Forecaster(Protocol):
         """
         ...
 
-    def predict(self, horizon: int) -> QuantileForecast:
-        """Produce a quantile forecast path.
+    def predict(self, horizon: int, index: pd.DatetimeIndex) -> QuantileForecast:
+        """Produce a quantile forecast path over the given dates.
 
         Args:
             horizon: Number of steps to forecast.
+            index: The timestamps being forecast, length ``horizon``, all strictly after
+                the fitted origin.
 
         Returns:
-            The forecast, whose index must start strictly after the fitted origin.
+            The forecast, indexed by ``index``.
+
+        Note:
+            The calendar is supplied rather than derived because a model cannot know it.
+            SPY does not trade on every business day, so extending the training index by
+            ``BDay`` would place a forecast on a market holiday and silently misalign
+            every subsequent date against the actuals.
+
+            Supplying it leaks nothing: an exchange calendar is published years in
+            advance, so the *dates* are known at the origin even though the *values* are
+            not. This is the same reasoning that makes day-of-week a legitimate covariate.
         """
         ...

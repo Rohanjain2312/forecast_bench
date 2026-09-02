@@ -115,3 +115,64 @@ full history remains in `data/raw/`.
 
 The `dgs10` gaps on the SPY index are bond-market holidays that are equity trading days.
 Left as NaN — gap handling belongs inside the fold.
+
+## Steps 10-11 — The harness (2026-09-02)
+
+### Deviation: `predict()` takes the forecast index
+
+`IMPLEMENTATION_PLAN.md` §3.1 specifies `predict(self, horizon: int) -> QuantileForecast`,
+with the index carried inside the returned object. A model cannot construct that index. SPY
+does not trade on every business day, so extending the training index by `BDay` puts a
+forecast on a market holiday and silently misaligns every later date against the actuals.
+
+Agreed with the user, 2026-09-02: the signature becomes
+
+```python
+def predict(self, horizon: int, index: pd.DatetimeIndex) -> QuantileForecast
+```
+
+`fit(train, origin)` is untouched, so the method carrying the study's central leakage
+warning still reads exactly as specified. Supplying the calendar leaks nothing — an exchange
+calendar is published years ahead, so the *dates* are known at the origin even though the
+*values* are not, the same reasoning that makes day-of-week a legitimate covariate.
+
+### Two xfails remain after Step 11, by dependency rather than by failure
+
+Step 11's acceptance check says "no xfail remaining". Two of the five checks in §3.5 do not
+depend on the harness at all:
+
+| Check | Depends on | Becomes real at |
+|---|---|---|
+| 4 — MASE denominators and RW quantiles recomputed per fold | `models/naive.py`, `evaluation/metrics.py` | Step 12-13 |
+| 5 — regime thresholds match the frozen config | `evaluation/regimes.py` | Step 13 |
+
+They are `xfail(strict=True)`, so each will convert to a hard failure the moment its module
+lands, forcing the marker to be removed deliberately. Checks 1-3 are live and enforced.
+
+### The canary works, and it caught the runner first
+
+Building the canary surfaced two real bugs before any model existed:
+
+- `Fold` is frozen but **not hashable** — it carries a `slice` and a `DatetimeIndex` — so
+  `run_backtest(return_fitted=True)` returns `list[tuple[Fold, dict]]`, not a dict.
+- The first version of the leaked-frame test failed because `assert_fold_is_clean` fired
+  correctly and aborted the run. The canary now measures the collapse with the guard
+  explicitly disabled, and a separate test asserts the guard stops it. Measuring the damage
+  and proving the guard are two different jobs.
+
+**Detector calibration.** `assert_fold_is_clean` flags a training column whose absolute
+correlation with the target at any lead 1-21 exceeds 0.999. Measured on the synthetic
+fixtures: a benign lagged-rolling-mean covariate peaks at **0.905**, the injected
+`target.shift(-21)` at **1.000**. The threshold is deliberately near 1.0 — this catches a
+near-perfect copy, not a merely informative covariate. Preventing the latter is the
+allowlist's job, not a correlation threshold's.
+
+### Fold counts on real data
+
+| Series | Folds | First origin | Last target date |
+|---|---|---|---|
+| `spy_logrv` | 137 | 2014-12-31 | 2026-06-11 |
+| `dgs10` | 136 | 2014-12-31 | 2026-06-03 |
+
+137 matches the figure in `DECISIONS.md` D6 exactly. The first fold's origin falls in the
+previous calendar year, so block 2014 contains exactly one fold under the matched cadence.

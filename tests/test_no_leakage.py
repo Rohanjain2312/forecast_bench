@@ -3,14 +3,14 @@
 Five checks, from IMPLEMENTATION_PLAN.md section 3.5. Written **before** the harness so
 that the harness is built against them rather than around them.
 
-Every test in this file is currently ``xfail(strict=True)``: the modules they import do
-not exist yet. ``strict=True`` matters — when a guard starts passing, the xfail becomes a
-failure and forces the marker to be removed deliberately rather than left to rot.
+Checks 1-3 are live. Checks 4 and 5 remain ``xfail(strict=True)`` because the modules they
+import land in later build steps; ``strict=True`` means that when a guard starts passing,
+the xfail becomes a failure and forces the marker to be removed deliberately rather than
+left to rot.
 
-The reason string on each marker names the build step at which it becomes real:
+The build step at which each check becomes real:
 
-    check 1     ->  Step 10 (the splitter) - live, markers removed
-    checks 2-3  ->  Step 11 (the runner)
+    checks 1-3  ->  live as of Step 11; the harness enforces them
     check 4     ->  Step 12 (the naive and classical models)
     check 5     ->  Step 13 (evaluation/regimes.py)
 
@@ -24,7 +24,6 @@ import pytest
 
 from forecast_bench.config import MAX_HORIZON
 
-STEP_11 = "backtest harness lands in build Step 11"
 STEP_12 = "naive and classical models land in build Step 12"
 STEP_13 = "evaluation/regimes.py lands in build Step 13"
 
@@ -75,7 +74,6 @@ def test_forecast_windows_never_overlap(synthetic_series, tiny_fold_spec) -> Non
 # --- Check 2: fitted objects are fold-local --------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=STEP_11)
 def test_every_fitted_model_records_its_fold_origin(
     synthetic_frame, tiny_fold_spec
 ) -> None:
@@ -98,13 +96,12 @@ def test_every_fitted_model_records_its_fold_origin(
         return_fitted=True,
     )
 
-    for fold, models in fitted.items():
+    for fold, models in fitted:
         for model in models.values():
             assert model.fitted_on_origin == fold.origin
             assert model.seen_max_index <= fold.origin
 
 
-@pytest.mark.xfail(strict=True, reason=STEP_11)
 def test_runner_rejects_a_forecast_that_starts_at_or_before_the_origin(
     synthetic_frame, tiny_fold_spec
 ) -> None:
@@ -122,7 +119,6 @@ def test_runner_rejects_a_forecast_that_starts_at_or_before_the_origin(
 # --- Check 3: the canary ---------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=STEP_11)
 def test_canary_error_collapses_when_the_future_is_injected(
     leaky_frame, synthetic_frame, tiny_fold_spec
 ) -> None:
@@ -141,6 +137,9 @@ def test_canary_error_collapses_when_the_future_is_injected(
         target="target",
         panel={"cheat": CheatingForecaster},
         folds=leaky_folds,
+        # Deliberately off: this test measures what leakage does to the error. That the
+        # guard would have stopped it is the next test's job.
+        check_leakage=False,
     )
 
     clean_folds = list(expanding_origin_folds(synthetic_frame.index, **tiny_fold_spec))
@@ -160,7 +159,6 @@ def test_canary_error_collapses_when_the_future_is_injected(
     ), "clean run is suspiciously close to the leak"
 
 
-@pytest.mark.xfail(strict=True, reason=STEP_11)
 def test_canary_leak_is_detected_by_the_fold_guard(leaky_frame, tiny_fold_spec) -> None:
     """The leakage guard flags a training frame containing a shifted copy of the target.
 

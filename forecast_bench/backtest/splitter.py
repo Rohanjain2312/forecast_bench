@@ -31,6 +31,11 @@ class Fold:
         fold_index: Zero-based position in the fold sequence.
         regime: Volatility regime label at the origin. Assigned downstream once VIX is
             available; ``None`` here because the splitter is deliberately data-agnostic.
+
+    Note:
+        Frozen but **not hashable**: it carries a ``slice`` and a ``DatetimeIndex``, so it
+        cannot be used as a dictionary key. Keep collections of folds as lists, or key on
+        ``fold_index``.
     """
 
     origin: pd.Timestamp
