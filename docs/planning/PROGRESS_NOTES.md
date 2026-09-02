@@ -65,3 +65,53 @@ Why this matters (DECISIONS.md D12): ZeroGPU charges GPU quota to the *visitor*,
 owner. An unauthenticated visitor gets 2 GPU-minutes per day and queues behind PRO users.
 Given the measured 0.85 s CPU latency, there is nothing to gain from a GPU and a real
 failure mode to lose.
+
+## Step 6 — Targets and covariates (2026-09-02)
+
+### The Garman-Klass floor never fires on this data
+
+`CLAUDE.md` lists "Garman-Klass can go non-positive on low-range days, and `ln()` then
+yields NaN" as a known trap. Measured on SPY 2000-01-03 → 2026-09-02, 6,707 bars:
+
+| | Count |
+|---|---|
+| Negative GK estimates | **0** |
+| Exactly-zero GK estimates | **0** |
+| Malformed bars (close outside the high-low range) | **0** |
+
+The floor is a safety net that currently never fires. That is worth stating rather than
+implying it is doing work.
+
+**The estimator is also less fragile than the trap note suggests.** For a well-formed bar
+(`H >= max(O, C)`, `L <= min(O, C)`) the Garman-Klass estimate cannot be negative: it would
+need `|ln(C/O)| > 1.138 * ln(H/L)`, which is unreachable when the range contains both the
+open and the close. The reachable degenerate case is *exactly zero*, on a fully flat bar.
+Genuinely negative values require a malformed bar — a bad vendor tick. Both are floored,
+but only the second indicates a data-quality problem. Pinned in `tests/test_targets.py`.
+
+### A flooring bug caught by measuring instead of assuming
+
+The first implementation used `variance.clip(lower=floor)`, which floors *everything*
+below the training 0.1th percentile rather than only non-positive values as
+`BUILD_ORDER.md` specifies. On real data that clipped **36 bars (0.54%)** — the quietest
+valid days, such as 2013-12-24 with a range of 0.12% of price — and silently altered the
+actuals every model is scored against. Corrected to `variance.where(variance > 0, floor)`.
+
+Effect on the target: minimum log-RV moves from -12.88 (clipped) to -14.11 (true).
+
+### `DGS10` is clipped to the study span
+
+FRED serves `DGS10` from 1962. Unclipped, the processed artifact carried four decades that
+no fold can reach and made covariate coverage look broken (`VIXCLS` "43% missing" is really
+just VIX not existing before 1990). Both target builders now clip to `TRAIN_START`; the
+full history remains in `data/raw/`.
+
+### Built series
+
+| Series | Rows | Span | Covariate gaps on the target's index |
+|---|---|---|---|
+| `spy_logrv` | 6,707 | 2000-01-03 → 2026-09-02 | `vixcls` 1 (0.01%), `dgs10` 50 (0.75%) |
+| `dgs10` | 6,669 | 2000-01-03 → 2026-08-31 | `vixcls` 11 (0.16%), others 0 |
+
+The `dgs10` gaps on the SPY index are bond-market holidays that are equity trading days.
+Left as NaN — gap handling belongs inside the fold.
