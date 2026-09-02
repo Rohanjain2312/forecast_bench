@@ -169,7 +169,7 @@ Print exactly this:
 
 ---
 
-### [ ] Step 4 — Verify credentials end to end
+### [x] Step 4 — Verify credentials end to end
 
 **Goal:** catch a bad key now, not in the middle of a backtest.
 
