@@ -62,6 +62,9 @@ target-version = ["py311"]
 [tool.isort]
 profile = "black"
 line_length = 88
+# Keep isort and ruff's I rules agreeing on where `tests.*` sorts; otherwise each
+# reformats what the other just wrote.
+known_first_party = ["forecast_bench", "tests"]
 
 [tool.ruff]
 line-length = 88
@@ -70,6 +73,9 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["forecast_bench", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
