@@ -111,7 +111,7 @@ git ls-remote --heads origin   # must now show refs/heads/main
 
 ---
 
-### [ ] Step 2 — Commit the pre-registration
+### [x] Step 2 — Commit the pre-registration
 
 **Goal:** get `PREREGISTRATION.md` into git history before any model code exists. The
 timestamp is the artifact; this is why it is Step 2 and not Step 20.
