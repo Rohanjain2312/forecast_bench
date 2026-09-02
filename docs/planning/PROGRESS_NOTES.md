@@ -292,3 +292,50 @@ last value is state, not a fitted parameter.
 
 The distinction the harness needs is between **parameters**, which the cadence governs, and
 **conditioning data**, which must always run to the fold's origin.
+
+### Fix applied: the cadence governs parameters, never conditioning data
+
+Agreed with the user, 2026-09-02. `Forecaster.fit` gains a `refit_parameters` flag and is
+now called on **every** fold; `BaseForecaster` splits into abstract `_estimate_parameters`
+and `_update_state`, both required, so adding a model forces an explicit decision about
+which attributes are learned and which are state. The statsmodels models use
+`results.apply(..., refit=False)`, which keeps the coefficients and recomputes the filtered
+state on the new sample.
+
+`runner.assert_conditioned_on_origin` now fires on every fit, so this cannot recur
+silently, and two regression tests pin it — one recording provenance at fit time, one
+asserting the random walk's median equals the value at the origin under both cadences.
+(Recording provenance *after* the run does not work: the block cadence reuses one object
+across a block, so every reference to it shows the final fold's state. The first version of
+that test got this wrong and caught itself.)
+
+### Results after both fixes — the registered predictions now hold
+
+`RandomWalk` median equals the value at the origin for all 137 SPY and 136 `DGS10` origins.
+Interval coverage across the panel is 0.68-0.80 against a nominal 0.80, mild under-coverage
+rather than the previous 1.00-at-triple-width.
+
+**Registered prediction 1 — HOLDS.** On `DGS10` nothing beats the random walk: the best
+skill score anywhere is AR(1) at h=1 with **+0.0018**, and ARIMA and AR(1) sit within
+[-0.028, +0.002] at every horizon. `SeasonalNaive` is far *worse* (-1.065 at h=1), which is
+outside the registered ±0.05 band but in the direction the prediction asserts — repeating
+last week's yield is a poor one-day forecast of a near-unit-root series. The prediction's
+claim was that nothing would *beat* the random walk, and nothing does.
+
+**Sanity check 2 — now HOLDS.** LogHAR is the strongest or effectively tied-strongest
+classical model at every horizon on SPY log-RV:
+
+| Model | h=1 | h=5 | h=21 |
+|---|---|---|---|
+| LogHAR | +0.166 | **+0.219** | **+0.212** |
+| ARIMA | **+0.168** | +0.210 | +0.205 |
+| HAR | -0.041 | +0.039 | +0.087 |
+
+At h=1 ARIMA leads by 0.0015 on WQL while LogHAR leads on MAE skill (+0.190 vs +0.183).
+HAR, fitted in variance space, stays the weaker of the two HAR variants, which is what the
+log-target specification predicts.
+
+**Both bugs inflated results in opposite directions and neither was visible in a headline
+number.** The stale conditioning made every model look better by crippling the baseline;
+the `sqrt(h)` intervals made HAR look worse than it is. Each was found by checking a
+property that had to be true by definition rather than by looking at a metric.

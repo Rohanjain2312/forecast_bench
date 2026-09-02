@@ -108,27 +108,38 @@ class StubForecaster:
             suite asserts this equals the fold's origin for every model in the panel.
         seen_max_index: Latest timestamp observed in training data, used to prove that no
             model saw past its origin.
-        fit_calls: Number of times :meth:`fit` has been called, used by the cadence tests.
+        fit_calls: Number of parameter re-estimations, used by the cadence tests.
+        parameters_fitted_on_origin: Origin at which parameters were last re-estimated.
     """
 
     model_id: str = "StubForecaster"
     constant: float = 0.0
     fitted_on_origin: pd.Timestamp | None = None
     seen_max_index: pd.Timestamp | None = None
+    parameters_fitted_on_origin: pd.Timestamp | None = None
     fit_calls: int = 0
     _last_index: pd.DatetimeIndex | None = field(default=None, repr=False)
 
-    def fit(self, train: pd.DataFrame, origin: pd.Timestamp) -> None:
-        """Record the fold's origin and the training window's last timestamp.
+    def fit(
+        self,
+        train: pd.DataFrame,
+        origin: pd.Timestamp,
+        refit_parameters: bool = True,
+    ) -> None:
+        """Record the fold's origin, and re-estimate only when asked.
 
         Args:
             train: Training frame for this fold.
             origin: The last timestamp this model is allowed to have seen.
+            refit_parameters: Whether the cadence wants parameters re-estimated.
         """
         self.fitted_on_origin = origin
         self.seen_max_index = train.index.max()
         self._last_index = train.index
-        self.fit_calls += 1
+        if refit_parameters:
+            self.fit_calls += 1
+            self.parameters_fitted_on_origin = origin
+        # State always refreshes, whatever the cadence.
         self.constant = float(train.iloc[:, 0].iloc[-1])
 
     def predict(self, horizon: int, index: pd.DatetimeIndex) -> QuantileForecast:
@@ -167,7 +178,12 @@ class CheatingForecaster(StubForecaster):
     leak_column: str = "future_leak"
     _leak_tail: np.ndarray | None = field(default=None, repr=False)
 
-    def fit(self, train: pd.DataFrame, origin: pd.Timestamp) -> None:
+    def fit(
+        self,
+        train: pd.DataFrame,
+        origin: pd.Timestamp,
+        refit_parameters: bool = True,
+    ) -> None:
         """Read the future path straight out of the leaked column.
 
         Because ``future_leak[t] == target[t + MAX_HORIZON]``, the column's final
@@ -178,8 +194,9 @@ class CheatingForecaster(StubForecaster):
         Args:
             train: Training frame for this fold.
             origin: The last timestamp this model is allowed to have seen.
+            refit_parameters: Whether the cadence wants parameters re-estimated.
         """
-        super().fit(train, origin)
+        super().fit(train, origin, refit_parameters)
         if self.leak_column in train.columns:
             self._leak_tail = train[self.leak_column].to_numpy(dtype=float)
 

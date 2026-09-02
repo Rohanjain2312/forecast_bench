@@ -29,18 +29,34 @@ class RandomWalk(BaseForecaster):
 
     model_id = "RandomWalk"
 
-    def _fit(
+    def _estimate_parameters(
         self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
     ) -> None:
-        """Record the last value and the training values used for the change distribution.
+        """Record the sample the h-step change distribution is measured from.
 
         Args:
             train: Training frame for this fold.
             series: The target column with NaNs dropped.
             origin: The fold's origin.
         """
-        self._last_value = float(series.iloc[-1])
         self._values = series.to_numpy(dtype=float)
+
+    def _update_state(
+        self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
+    ) -> None:
+        """Refresh the last observed value, which is the forecast itself.
+
+        Args:
+            train: Training frame for this fold.
+            series: The target column with NaNs dropped.
+            origin: The fold's origin.
+
+        Note:
+            The last value is *state*, not a parameter. A random walk forecasting from a
+            value four months old is not a random walk, and since it is the baseline every
+            skill score is quoted against, freezing it inflated the whole study.
+        """
+        self._last_value = float(series.iloc[-1])
 
     def _quantile_paths(self, horizon: int) -> dict[float, np.ndarray]:
         """Centre the empirical h-step change distribution on the last observed value.
@@ -96,10 +112,10 @@ class SeasonalNaive(BaseForecaster):
         super().__init__(target_column=target_column)
         self.period = period
 
-    def _fit(
+    def _estimate_parameters(
         self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
     ) -> None:
-        """Store the final season and the in-sample seasonal errors.
+        """Measure the in-sample one-season-ahead errors, this model's spread.
 
         Args:
             train: Training frame for this fold.
@@ -115,9 +131,19 @@ class SeasonalNaive(BaseForecaster):
                 f"{self.model_id}: need more than {self.period} observations, got "
                 f"{len(values)}"
             )
-        self._last_season = values[-self.period :]
-        # In-sample one-season-ahead errors, the basis for this model's own spread.
         self._errors = values[self.period :] - values[: -self.period]
+
+    def _update_state(
+        self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
+    ) -> None:
+        """Refresh the final season, which is what gets repeated forward.
+
+        Args:
+            train: Training frame for this fold.
+            series: The target column with NaNs dropped.
+            origin: The fold's origin.
+        """
+        self._last_season = series.to_numpy(dtype=float)[-self.period :]
 
     def _quantile_paths(self, horizon: int) -> dict[float, np.ndarray]:
         """Repeat the last season and widen by the centred seasonal error spread.

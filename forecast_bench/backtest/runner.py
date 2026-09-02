@@ -116,6 +116,32 @@ def assert_fold_is_clean(
                 )
 
 
+def assert_conditioned_on_origin(model: Forecaster, origin: pd.Timestamp) -> None:
+    """Assert a model has just conditioned on data running to this fold's origin.
+
+    Args:
+        model: The model that was just fitted.
+        origin: The fold's origin.
+
+    Raises:
+        AssertionError: If the model reports conditioning on a different origin.
+
+    Note:
+        The cheap runtime counterpart to :func:`assert_forecast_is_after_origin`, and the
+        guard that would have caught the stale-conditioning bug in PROGRESS_NOTES.md Step
+        14 on the first fold rather than in the results table. Models that do not expose
+        ``fitted_on_origin`` are skipped rather than rejected, since the protocol only
+        recommends the attribute.
+    """
+    recorded = getattr(model, "fitted_on_origin", None)
+    if recorded is not None and recorded != origin:
+        raise AssertionError(
+            f"{getattr(model, 'model_id', model)} reports conditioning on {recorded} at a "
+            f"fold whose origin is {origin}. The refit cadence governs parameters only; "
+            "conditioning data must always run to the fold's origin."
+        )
+
+
 def run_backtest(
     data: pd.DataFrame,
     target: str,
@@ -135,7 +161,8 @@ def run_backtest(
         data: Frame containing the target and any covariates, indexed by date.
         target: Name of the target column.
         panel: Mapping of model key to a zero-argument builder. A builder is called afresh
-            on every refit, so no fitted state can survive a fold boundary by accident.
+            on every parameter refit, so no fitted parameter can survive a block boundary
+            by accident. Conditioning data is refreshed on every fold regardless.
         folds: Folds to evaluate, from ``splitter.expanding_origin_folds``.
         cadence: Refit policy. Defaults to :class:`~forecast_bench.backtest.cadence.EveryFoldCadence`.
         series: Series label written into the results. Defaults to ``target``.
@@ -174,11 +201,16 @@ def run_backtest(
             assert_fold_is_clean(train, target=target, origin=fold.origin)
 
         for model_key, build in panel.items():
-            if policy.should_refit(model_key, fold) or model_key not in cache:
-                model = build()
-                model.fit(train, origin=fold.origin)
-                cache[model_key] = model
+            # The cadence governs parameters only. Every model is handed data running to
+            # this fold's origin on every fold, so no model can forecast from stale
+            # conditioning data -- see the Step 14 entry in PROGRESS_NOTES.md for what
+            # happened when it could.
+            refit = policy.should_refit(model_key, fold) or model_key not in cache
+            if refit:
+                cache[model_key] = build()
                 refits += 1
+            cache[model_key].fit(train, origin=fold.origin, refit_parameters=refit)
+            assert_conditioned_on_origin(cache[model_key], fold.origin)
 
             forecast = cache[model_key].predict(
                 horizon=horizon, index=fold.forecast_index
@@ -190,7 +222,7 @@ def run_backtest(
             fitted.append((fold, dict(cache)))
 
     logger.info(
-        "Ran %d folds x %d models under cadence %r (%d fits)",
+        "Ran %d folds x %d models under cadence %r (%d parameter refits)",
         len(folds),
         len(panel),
         getattr(policy, "name", "unknown"),

@@ -98,7 +98,7 @@ class LogHAR(BaseForecaster):
         """
         return series.to_numpy(dtype=float)
 
-    def _fit(
+    def _estimate_parameters(
         self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
     ) -> None:
         """Fit the HAR regression by ordinary least squares on this fold.
@@ -114,7 +114,18 @@ class LogHAR(BaseForecaster):
         coefficients, *_ = np.linalg.lstsq(design, target, rcond=None)
         self._coefficients = coefficients
         self._residuals = target - design @ coefficients
-        self._history = values
+
+    def _update_state(
+        self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
+    ) -> None:
+        """Refresh the history the recursion is iterated forward from.
+
+        Args:
+            train: Training frame for this fold.
+            series: The target column with NaNs dropped.
+            origin: The fold's origin.
+        """
+        self._history = self._model_space(series)
 
     def _iterate(self, horizon: int) -> np.ndarray:
         """Roll the fitted regression forward, feeding each forecast back in.

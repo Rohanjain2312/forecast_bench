@@ -140,12 +140,33 @@ class Forecaster(Protocol):
 
     model_id: str
 
-    def fit(self, train: pd.DataFrame, origin: pd.Timestamp) -> None:
+    def fit(
+        self,
+        train: pd.DataFrame,
+        origin: pd.Timestamp,
+        refit_parameters: bool = True,
+    ) -> None:
         """Fit on data at or before ``origin``.
+
+        Called on **every** fold, so a model always conditions on data running to that
+        fold's origin. ``refit_parameters`` says whether the fold's refit cadence also
+        wants the parameters re-estimated.
 
         Args:
             train: Training frame for this fold. Its index never exceeds ``origin``.
             origin: The last timestamp this model is allowed to have seen.
+            refit_parameters: Re-estimate parameters when ``True``; when ``False``, keep
+                the existing parameters and only refresh the conditioning data.
+
+        Note:
+            The cadence governs **parameters**, never conditioning data. Freezing both is
+            what an earlier version of the runner did, and it left 124 of 137 random-walk
+            forecasts running from a value a median of 84 trading days old, which inflated
+            every skill score quoted against that baseline.
+
+            The distinction is not pedantic. A zero-shot foundation model has no parameters
+            to refit at all, so a cadence that gated conditioning would hand it a
+            months-old context window and call the result a benchmark of that model.
         """
         ...
 

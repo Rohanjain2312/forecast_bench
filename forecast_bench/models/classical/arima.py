@@ -54,7 +54,7 @@ class ARIMA(BaseForecaster):
         self.selected_order: tuple[int, int, int] | None = None
         self._results = None
 
-    def _fit(
+    def _estimate_parameters(
         self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
     ) -> None:
         """Select an order by AIC on this fold's data only, then fit it.
@@ -102,6 +102,26 @@ class ARIMA(BaseForecaster):
 
         self.selected_order = best_order
         self._results = best_results
+
+    def _update_state(
+        self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
+    ) -> None:
+        """Re-apply the existing parameters to data running to this fold's origin.
+
+        Args:
+            train: Training frame for this fold.
+            series: The target column with NaNs dropped.
+            origin: The fold's origin.
+
+        Note:
+            ``results.apply(..., refit=False)`` keeps the estimated coefficients and
+            recomputes the filtered state on the new sample, which is exactly the
+            parameters/conditioning split the refit cadence is meant to express.
+        """
+        values = series.to_numpy(dtype=float)[-self.max_train :]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self._results = self._results.apply(values, refit=False)
 
     def _quantile_paths(self, horizon: int) -> dict[float, np.ndarray]:
         """Extract quantiles from the fitted model's forecast distribution.

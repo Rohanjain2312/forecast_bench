@@ -145,7 +145,11 @@ class BaseForecaster(ABC):
         model_id: Stable identifier used as the results-table key.
         target_column: Column holding the target. ``None`` means "the first column",
             which is the convention the merge layer guarantees.
-        fitted_on_origin: Origin of the fold this instance was fitted on.
+        fitted_on_origin: Origin of the fold this instance last conditioned on. Always
+            the current fold's origin.
+        parameters_fitted_on_origin: Origin at which the parameters were last estimated.
+            Under a block cadence this lags ``fitted_on_origin`` within a block, which is
+            exactly the intended difference between the two cadences.
     """
 
     model_id: str = "BaseForecaster"
@@ -158,14 +162,26 @@ class BaseForecaster(ABC):
         """
         self.target_column = target_column
         self.fitted_on_origin: pd.Timestamp | None = None
+        self.parameters_fitted_on_origin: pd.Timestamp | None = None
+        self._parameters_fitted = False
         self._series: pd.Series | None = None
 
-    def fit(self, train: pd.DataFrame, origin: pd.Timestamp) -> None:
+    def fit(
+        self,
+        train: pd.DataFrame,
+        origin: pd.Timestamp,
+        refit_parameters: bool = True,
+    ) -> None:
         """Fit on data at or before ``origin``.
+
+        Called on every fold. Splits into two steps so that the refit cadence can govern
+        parameters without ever freezing conditioning data.
 
         Args:
             train: Training frame for this fold. Its index never exceeds ``origin``.
             origin: The last timestamp this model is allowed to have seen.
+            refit_parameters: Re-estimate parameters when ``True``; otherwise keep them
+                and only refresh the conditioning state.
 
         Raises:
             ValueError: If the resolved target column is empty after dropping NaNs.
@@ -177,7 +193,13 @@ class BaseForecaster(ABC):
 
         self.fitted_on_origin = origin
         self._series = series
-        self._fit(train, series, origin)
+
+        if refit_parameters or not self._parameters_fitted:
+            self._estimate_parameters(train, series, origin)
+            self._parameters_fitted = True
+            self.parameters_fitted_on_origin = origin
+
+        self._update_state(train, series, origin)
 
     def predict(self, horizon: int, index: pd.DatetimeIndex) -> QuantileForecast:
         """Produce a quantile forecast over the supplied dates.
@@ -206,10 +228,14 @@ class BaseForecaster(ABC):
         return forecast
 
     @abstractmethod
-    def _fit(
+    def _estimate_parameters(
         self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
     ) -> None:
-        """Fit the model. Called by :meth:`fit` after bookkeeping.
+        """Re-estimate parameters from this fold's training window.
+
+        Everything learned from data belongs here: regression coefficients, ARIMA orders,
+        residual quantiles, MASE denominators, scalers. The refit cadence decides how often
+        this runs.
 
         Args:
             train: The full training frame, including any covariates.
@@ -218,12 +244,22 @@ class BaseForecaster(ABC):
         """
 
     @abstractmethod
-    def _quantile_paths(self, horizon: int) -> dict[float, np.ndarray]:
-        """Return one path per quantile level.
+    def _update_state(
+        self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
+    ) -> None:
+        """Refresh the data the forecast is conditioned on.
+
+        Runs on **every** fold, whatever the cadence. Only the values a forecast is
+        conditioned on belong here — the last observation, the recent history, the context
+        window — never anything estimated from data.
+
+        Both halves are abstract rather than one defaulting to the other, so that adding a
+        model forces an explicit decision about which of its attributes are parameters and
+        which are state. Getting that split wrong silently is what produced the stale
+        baseline described in docs/planning/PROGRESS_NOTES.md, Step 14.
 
         Args:
-            horizon: Number of steps to forecast.
-
-        Returns:
-            Mapping of level to an array of length ``horizon``.
+            train: The full training frame, including any covariates.
+            series: The target column with NaNs dropped.
+            origin: The fold's origin.
         """

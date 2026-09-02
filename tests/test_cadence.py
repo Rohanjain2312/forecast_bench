@@ -1,5 +1,6 @@
 """Tests for the refit cadence policies: triggers fire exactly when expected."""
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -150,3 +151,84 @@ def test_matched_cadence_reuses_a_fit_within_a_block(synthetic_frame) -> None:
     # One fit per block, and the objects across blocks are genuinely distinct.
     firsts = [models[0] for models in by_block.values()]
     assert len({id(model) for model in firsts}) == len(by_block)
+
+
+def test_state_refreshes_every_fold_even_when_parameters_do_not(
+    synthetic_frame,
+) -> None:
+    """The cadence governs parameters only; conditioning data always runs to the origin.
+
+    Regression test for the bug in docs/planning/PROGRESS_NOTES.md Step 14, where caching
+    the fitted object froze its conditioning data too and left 124 of 137 random-walk
+    forecasts running from a value a median of 84 trading days old.
+
+    Provenance is recorded *at fit time*. Inspecting the returned models afterwards would
+    not work: the block cadence reuses one object across a block, so every reference to it
+    shows the final fold's state.
+    """
+    recorded: list[tuple[pd.Timestamp, pd.Timestamp, bool]] = []
+
+    class RecordingForecaster(StubForecaster):
+        def fit(self, train, origin, refit_parameters=True):
+            super().fit(train, origin, refit_parameters)
+            recorded.append((origin, train.index.max(), refit_parameters))
+
+    folds = list(
+        expanding_origin_folds(
+            synthetic_frame.index,
+            test_start="2004-01-01",
+            test_end="2006-12-31",
+        )
+    )
+    run_backtest(
+        data=synthetic_frame,
+        target="target",
+        panel={"stub": RecordingForecaster},
+        folds=folds,
+        cadence=BlockCadence(),
+    )
+
+    assert len(recorded) == len(folds), "fit was not called on every fold"
+    for fold, (origin, seen_max, _) in zip(folds, recorded):
+        assert origin == fold.origin
+        assert seen_max <= fold.origin
+
+    refits = sum(1 for _, _, refit in recorded if refit)
+    assert refits == len({fold.block_id for fold in folds})
+    assert refits < len(folds), "block cadence never reused a parameter fit"
+
+
+def test_random_walk_forecasts_from_the_origin_under_every_cadence(
+    synthetic_frame,
+) -> None:
+    """The random walk's median is the value at the origin, by definition.
+
+    This property is what exposed the stale-conditioning bug. It is the baseline every
+    skill score in the study is quoted against, so if it drifts, every number drifts.
+    """
+    from forecast_bench.models.naive import RandomWalk
+
+    folds = list(
+        expanding_origin_folds(
+            synthetic_frame.index,
+            test_start="2004-01-01",
+            test_end="2006-12-31",
+        )
+    )
+
+    for policy in (EveryFoldCadence(), BlockCadence()):
+        results = run_backtest(
+            data=synthetic_frame,
+            target="target",
+            panel={"RandomWalk": lambda: RandomWalk(target_column="target")},
+            folds=folds,
+            cadence=policy,
+        )
+        medians = results[
+            (results["step"] == 1) & (np.isclose(results["quantile"], 0.5))
+        ].set_index("origin")["value"]
+        expected = synthetic_frame["target"].reindex(medians.index)
+
+        assert np.allclose(
+            medians.to_numpy(), expected.to_numpy()
+        ), f"under {policy.name} the random walk is not forecasting from its origin"

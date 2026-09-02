@@ -67,7 +67,7 @@ class SARIMAX(BaseForecaster):
         self._results = None
         self._future_exog: np.ndarray | None = None
 
-    def _fit(
+    def _estimate_parameters(
         self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
     ) -> None:
         """Fit SARIMAX with lagged covariates on this fold.
@@ -106,6 +106,37 @@ class SARIMAX(BaseForecaster):
         # The forecast needs exogenous values for future dates. Only values known at the
         # origin may be used, so the last observed row is held constant across the path.
         # This is a modelling assumption, not a data source: it uses nothing unobserved.
+        self._future_exog = (
+            np.tile(exog[-1], (1, 1)) if exog is not None and len(exog) else None
+        )
+
+    def _update_state(
+        self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
+    ) -> None:
+        """Re-apply the existing parameters to data running to this fold's origin.
+
+        Args:
+            train: Training frame for this fold, including covariates.
+            series: The target column with NaNs dropped.
+            origin: The fold's origin.
+        """
+        name = self.target_column or str(train.columns[0])
+        columns = self.exog_columns or [
+            column for column in train.columns if column != name
+        ]
+
+        aligned = train[[name, *columns]].copy()
+        for column in columns:
+            aligned[column] = aligned[column].shift(self.exog_lag)
+        aligned = aligned.ffill().dropna().tail(self.max_train)
+
+        endog = aligned[name].to_numpy(dtype=float)
+        exog = aligned[columns].to_numpy(dtype=float) if columns else None
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self._results = self._results.apply(endog, exog=exog, refit=False)
+
         self._future_exog = (
             np.tile(exog[-1], (1, 1)) if exog is not None and len(exog) else None
         )
