@@ -156,6 +156,44 @@ def push_results(
     return uploaded
 
 
+def push_forecasts(
+    directory: Path | None = None, repo_id: str | None = None
+) -> list[str]:
+    """Upload the tidy forecast parquets written by the backtest runner.
+
+    Args:
+        directory: Directory holding the parquets. Defaults to the configured forecasts dir.
+        repo_id: Destination dataset repo. Defaults to the configured one.
+
+    Returns:
+        Paths uploaded, relative to the repo root.
+
+    Note:
+        Used by the Colab notebooks: the GPU work happens there, but the forecasts have to
+        come back so the local machine can score them through the same
+        ``evaluation/aggregate.py`` as everything else.
+    """
+    from huggingface_hub import HfApi
+
+    config = get_config()
+    api = HfApi(token=config.require_secret("hf_token"))
+    destination = repo_id or config.hf_dataset_repo
+    source = directory or config.forecasts_dir
+
+    uploaded: list[str] = []
+    for path in sorted(source.glob("*.parquet")):
+        target = f"forecasts/{path.name}"
+        api.upload_file(
+            path_or_fileobj=str(path),
+            path_in_repo=target,
+            repo_id=destination,
+            repo_type="dataset",
+        )
+        uploaded.append(target)
+    logger.info("Uploaded %d forecast files to %s", len(uploaded), destination)
+    return uploaded
+
+
 def load_processed(name: str, repo_id: str | None = None) -> pd.DataFrame:
     """Read a processed series from the Hub.
 

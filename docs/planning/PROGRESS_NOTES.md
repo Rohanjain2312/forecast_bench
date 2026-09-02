@@ -397,3 +397,46 @@ descriptive only and no claim rests on it.
 - `forecastbench-chronos`: model card with `license: apache-2.0`, written **before** any
   weights exist. Chronos is Apache 2.0 and a LoRA derivative inherits it, so a repo holding
   weights without that field would be an unlicensed redistribution.
+
+## Step 16 — Fine-tuning recipe and Colab notebooks (2026-09-02)
+
+### Two fine-tuning paths, because the two checkpoints are genuinely different
+
+`Chronos2Pipeline` exposes an official `fit(finetune_mode="lora", lora_config=...)`, so
+Chronos-2 uses it. `ChronosBoltPipeline` has **no** `fit` at all, so Bolt takes the standard
+`transformers` + `peft` route with an explicit loop — which is exactly the split
+`DECISIONS.md` D13 predicted. Bolt's `forward` returns its own quantile loss when handed a
+target, so the loop optimises the model's native objective rather than a reconstruction of
+it. Two independent paths means neither is a single point of failure.
+
+Recipe as pre-registered: rank 8, alpha 16, dropout 0.05, targeting `q`/`k`/`v`/`o`
+projections, early stopping with patience 3 on a validation slice taken from the **end** of
+each block. Trainable-parameter counts are logged and written into the run metadata pushed
+alongside each checkpoint.
+
+### `pytorch-lightning` was missing
+
+darts raised "The (Py)Torch module could not be imported" despite torch 2.14 being present:
+darts' torch models need Lightning, which nothing had pulled in. Added to the main
+dependencies rather than the `gpu` group, so the neural models are importable locally and
+covered by the protocol tests.
+
+### darts hands float64 to MPS, which cannot take it
+
+`TimeSeries.from_values` defaulted to float64, and torch's MPS backend rejects that dtype
+outright. Cast to float32 in `to_timeseries`. Not a platform workaround — float32 is the
+standard dtype for neural training on every backend.
+
+### Orchestration moved into the package
+
+`scripts/run_backtest.py::run` became `backtest/runner.py::run_series_backtest`. Colab
+installs the package with pip and never gets `scripts/`, so a notebook could not have called
+the CLI's logic — it would have had to reimplement it, which is the drift this project's
+notebook rule exists to prevent.
+
+### Notebook conventions are enforced by tests, not by discipline
+
+`tests/test_notebooks.py` asserts that each Colab notebook parses, contains no loop over
+folds, imports `forecast_bench` for its heavy work, precedes every code cell with a plain-
+language markdown cell, opens with its Hub prerequisites, stores no outputs, and contains no
+literal secret. A convention nobody checks is a convention that decays.

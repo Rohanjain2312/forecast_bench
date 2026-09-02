@@ -17,6 +17,9 @@ numpy = ">=1.26"
 scipy = ">=1.11"
 statsmodels = ">=0.14"
 darts = ">=0.30"
+# darts' torch models (N-BEATS, RNNModel) need Lightning; without it darts raises
+# "The (Py)Torch module could not be imported" even when torch itself is present.
+pytorch-lightning = ">=2.3"
 chronos-forecasting = ">=1.4"
 fredapi = ">=0.5"
 yfinance = ">=0.2.40"

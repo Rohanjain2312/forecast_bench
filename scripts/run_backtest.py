@@ -10,17 +10,12 @@ Everything downstream reads that schema and only that schema.
 
 import argparse
 import logging
-import time
 
 import pandas as pd
 
-from forecast_bench.backtest.cadence import build_cadence
-from forecast_bench.backtest.runner import attach_regimes, run_backtest
-from forecast_bench.backtest.splitter import expanding_origin_folds
+from forecast_bench.backtest.runner import run_series_backtest
 from forecast_bench.backtest.writer import write_results
-from forecast_bench.config import MAX_HORIZON, get_config, setup_logging
-from forecast_bench.evaluation.regimes import regime_series
-from forecast_bench.models.registry import classical_panel
+from forecast_bench.config import get_config, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -44,71 +39,6 @@ def load_series(name: str) -> pd.DataFrame:
             f"    poetry run python -m scripts.fetch_data --config {name}"
         )
     return pd.read_parquet(path)
-
-
-def run(
-    series: str,
-    cadence: str = "matched",
-    arm: str = "A",
-    horizon: int = MAX_HORIZON,
-    include_foundation: bool = False,
-) -> pd.DataFrame:
-    """Run one backtest configuration end to end.
-
-    Args:
-        series: Target series name.
-        cadence: ``"matched"`` or ``"native"``.
-        arm: ``"A"`` (univariate) or ``"B"`` (covariate-informed).
-        horizon: Steps forecast per fold.
-        include_foundation: Add the zero-shot foundation models to the panel.
-
-    Returns:
-        The tidy results frame.
-
-    Note:
-        In Arm A every model is handed the target column only. Passing the full frame and
-        trusting models to ignore covariates would make the univariate claim depend on
-        each model's discipline rather than on what it was given.
-    """
-    frame = load_series(series)
-    folds = list(expanding_origin_folds(frame.index))
-
-    if "vixcls" in frame.columns:
-        folds = attach_regimes(folds, regime_series(frame["vixcls"]))
-
-    data = frame[[series]] if arm == "A" else frame
-    panel = classical_panel(
-        series, arm=arm, target_column=series, include_foundation=include_foundation
-    )
-    policy = build_cadence(cadence)
-
-    logger.info(
-        "Backtesting %s | arm %s | cadence %s | %d folds | models: %s",
-        series,
-        arm,
-        cadence,
-        len(folds),
-        ", ".join(sorted(panel)),
-    )
-
-    started = time.perf_counter()
-    results = run_backtest(
-        data=data,
-        target=series,
-        panel=panel,
-        folds=folds,
-        cadence=policy,
-        series=series,
-        arm=arm,
-        horizon=horizon,
-    )
-    logger.info(
-        "Finished %s in %.1fs (%d rows)",
-        series,
-        time.perf_counter() - started,
-        len(results),
-    )
-    return results
 
 
 def parse_args() -> argparse.Namespace:
@@ -140,8 +70,9 @@ def main() -> int:
     config = get_config()
     config.ensure_dirs()
 
-    results = run(
+    results = run_series_backtest(
         args.config,
+        frame=load_series(args.config),
         cadence=args.cadence,
         arm=args.arm,
         include_foundation=args.with_foundation,

@@ -20,6 +20,24 @@ from forecast_bench.models.registry import (
 MODEL_CLASSES = all_registered_model_classes()
 MODEL_IDS = sorted(MODEL_CLASSES)
 
+#: Lightweight settings for the models that would otherwise train a real network here.
+#:
+#: These tests check protocol conformance — the full quantile grid, no crossings, finite
+#: values, correct provenance — not forecast quality. Training for 50 epochs to assert that
+#: eleven arrays come back would make the suite unusable in CI. The production settings are
+#: exercised in the Colab notebooks.
+_LIGHT_KWARGS = {
+    "N-BEATS": {"n_epochs": 1, "input_chunk_length": 32, "device": "cpu"},
+    "DeepAR-LSTM": {"n_epochs": 1, "input_chunk_length": 32, "device": "cpu"},
+}
+
+
+def _build(model_id: str):
+    """Construct a registered model with test-appropriate settings."""
+    return MODEL_CLASSES[model_id](
+        target_column="target", **_LIGHT_KWARGS.get(model_id, {})
+    )
+
 
 @pytest.fixture
 def training_frame(synthetic_series) -> pd.DataFrame:
@@ -40,7 +58,7 @@ def forecast_index(training_frame) -> pd.DatetimeIndex:
 
 def _fit_and_predict(model_id: str, frame: pd.DataFrame, index) -> QuantileForecast:
     """Fit a registered model on the frame and forecast over the index."""
-    model = MODEL_CLASSES[model_id](target_column="target")
+    model = _build(model_id)
     origin = frame.index[-1]
     model.fit(frame, origin=origin)
     return model.predict(horizon=MAX_HORIZON, index=index)
@@ -49,7 +67,7 @@ def _fit_and_predict(model_id: str, frame: pd.DataFrame, index) -> QuantileForec
 @pytest.mark.parametrize("model_id", MODEL_IDS)
 def test_model_satisfies_the_forecaster_protocol(model_id) -> None:
     """Every registered class structurally implements Forecaster."""
-    model = MODEL_CLASSES[model_id](target_column="target")
+    model = _build(model_id)
     assert isinstance(model, Forecaster)
     assert hasattr(model, "fit")
     assert hasattr(model, "predict")
@@ -98,7 +116,7 @@ def test_model_records_the_origin_it_was_fitted_on(
     model_id, training_frame, forecast_index
 ) -> None:
     """Fold provenance is recorded, which the leakage suite asserts against."""
-    model = MODEL_CLASSES[model_id](target_column="target")
+    model = _build(model_id)
     origin = training_frame.index[-1]
     model.fit(training_frame, origin=origin)
     assert model.fitted_on_origin == origin
@@ -116,7 +134,7 @@ def test_forecast_index_starts_after_the_origin(
 @pytest.mark.parametrize("model_id", MODEL_IDS)
 def test_predict_before_fit_is_an_error(model_id, forecast_index) -> None:
     """Predicting from an unfitted model fails loudly rather than returning nonsense."""
-    model = MODEL_CLASSES[model_id](target_column="target")
+    model = _build(model_id)
     with pytest.raises(RuntimeError, match="before fit"):
         model.predict(horizon=MAX_HORIZON, index=forecast_index)
 
@@ -150,7 +168,7 @@ def test_seasonal_naive_repeats_the_previous_week(
 
 def test_arima_selects_an_order_inside_the_fold(training_frame) -> None:
     """Order selection happens during fit, so it is a fold-local decision."""
-    model = MODEL_CLASSES["ARIMA"](target_column="target")
+    model = _build("ARIMA")
     assert model.selected_order is None
     model.fit(training_frame, origin=training_frame.index[-1])
     assert model.selected_order is not None

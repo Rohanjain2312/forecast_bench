@@ -17,7 +17,7 @@ import pandas as pd
 
 from forecast_bench.backtest.cadence import EveryFoldCadence, RefitCadence
 from forecast_bench.backtest.protocol import Forecaster
-from forecast_bench.backtest.splitter import Fold
+from forecast_bench.backtest.splitter import Fold, expanding_origin_folds
 from forecast_bench.backtest.writer import ForecastWriter
 from forecast_bench.config import MAX_HORIZON
 
@@ -258,3 +258,105 @@ def attach_regimes(folds: list[Fold], regimes: pd.Series) -> list[Fold]:
             )
         )
     return labelled
+
+
+def run_series_backtest(
+    series: str,
+    frame: pd.DataFrame | None = None,
+    cadence: str = "matched",
+    arm: str = "A",
+    horizon: int = MAX_HORIZON,
+    include_foundation: bool = False,
+    include_neural: bool = False,
+    **model_kwargs,
+) -> pd.DataFrame:
+    """Run one full backtest configuration for a series.
+
+    Lives in the package rather than in ``scripts/`` so that Colab and the Space, which
+    ``pip install`` this repository, can call exactly the code the CLI calls. A notebook
+    that reimplemented this would be a notebook that drifts from the repository.
+
+    Args:
+        series: Target series name.
+        frame: Processed frame. Loaded from the Hub when ``None``.
+        cadence: ``"matched"`` or ``"native"``.
+        arm: ``"A"`` (univariate) or ``"B"`` (covariate-informed).
+        horizon: Steps forecast per fold.
+        include_foundation: Add the zero-shot foundation models.
+        include_neural: Add the from-scratch neural baselines, which need a GPU.
+        **model_kwargs: Extra keyword arguments passed to every model builder, e.g.
+            ``device`` or ``training_window_days`` for the sample-efficiency sweep.
+
+    Returns:
+        The tidy long-format results frame.
+
+    Note:
+        In Arm A every model is handed the target column only. Passing the full frame and
+        trusting each model to ignore covariates would make the univariate claim depend on
+        model discipline rather than on what the model was given.
+    """
+    from forecast_bench.backtest.cadence import build_cadence
+    from forecast_bench.evaluation.regimes import regime_series
+    from forecast_bench.models.registry import classical_panel
+
+    if frame is None:
+        from forecast_bench.data.hub import load_processed
+
+        frame = load_processed(series)
+
+    folds = list(expanding_origin_folds(frame.index))
+    if "vixcls" in frame.columns:
+        folds = attach_regimes(folds, regime_series(frame["vixcls"]))
+
+    data = frame[[series]] if arm == "A" else frame
+    panel = classical_panel(
+        series,
+        arm=arm,
+        target_column=series,
+        include_foundation=include_foundation,
+        include_neural=include_neural,
+    )
+    if model_kwargs:
+        panel = {
+            model_id: (lambda b=build, k=model_kwargs: _build_with(b, k))
+            for model_id, build in panel.items()
+        }
+
+    logger.info(
+        "Backtesting %s | arm %s | cadence %s | %d folds | models: %s",
+        series,
+        arm,
+        cadence,
+        len(folds),
+        ", ".join(sorted(panel)),
+    )
+    return run_backtest(
+        data=data,
+        target=series,
+        panel=panel,
+        folds=folds,
+        cadence=build_cadence(cadence),
+        series=series,
+        arm=arm,
+        horizon=horizon,
+    )
+
+
+def _build_with(build, kwargs: dict):
+    """Apply extra keyword arguments to a model builder where the model accepts them.
+
+    Args:
+        build: A zero-argument builder from the registry.
+        kwargs: Extra keyword arguments to apply.
+
+    Returns:
+        A model instance, with any argument its constructor does not accept dropped.
+    """
+    import inspect
+
+    model = build()
+    accepted = inspect.signature(type(model).__init__).parameters
+    for name, value in kwargs.items():
+        if name in accepted:
+            setattr(model, name, value)
+    return model

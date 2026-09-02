@@ -24,6 +24,8 @@ from forecast_bench.models.classical.sarimax import SARIMAX
 from forecast_bench.models.foundation.chronos2 import Chronos2ZeroShot
 from forecast_bench.models.foundation.chronos_bolt import ChronosBoltZeroShot
 from forecast_bench.models.naive import RandomWalk, SeasonalNaive
+from forecast_bench.models.neural.deepar import DeepAR
+from forecast_bench.models.neural.nbeats import NBEATS
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +59,22 @@ _FOUNDATION_ZERO_SHOT = {
 }
 
 
+#: From-scratch neural baselines, registered for every series.
+#:
+#: Kept in their own group because they are the only models that need GPU training, so a
+#: local run can exclude them without touching the panel definition.
+_NEURAL = {
+    "N-BEATS": NBEATS,
+    "DeepAR-LSTM": DeepAR,
+}
+
+
 def classical_panel(
     series: str,
     arm: str = "A",
     target_column: str | None = None,
     include_foundation: bool = False,
+    include_neural: bool = False,
 ) -> dict[str, Callable[[], Forecaster]]:
     """Build the naive and classical panel for one series and arm.
 
@@ -70,6 +83,7 @@ def classical_panel(
         arm: ``"A"`` (univariate) or ``"B"`` (covariate-informed).
         target_column: Column holding the target. Defaults to ``series``.
         include_foundation: Add the zero-shot foundation models to the panel.
+        include_neural: Add the from-scratch neural baselines, which need GPU training.
 
     Returns:
         Mapping of model id to a zero-argument builder. A builder is called afresh on every
@@ -93,6 +107,8 @@ def classical_panel(
         registered = {**registered, **_ARM_B_ONLY}
     if include_foundation:
         registered = {**registered, **_FOUNDATION_ZERO_SHOT}
+    if include_neural:
+        registered = {**registered, **_NEURAL}
 
     return {
         model_id: _builder(model_class, column)
@@ -125,7 +141,17 @@ def all_registered_model_classes() -> dict[str, type]:
         combined.update(specific)
     combined.update(_ARM_B_ONLY)
     combined.update(_FOUNDATION_ZERO_SHOT)
+    combined.update(_NEURAL)
     return combined
+
+
+def neural_model_ids() -> list[str]:
+    """Model ids that require GPU training.
+
+    Returns:
+        The neural baseline ids, sorted.
+    """
+    return sorted(_NEURAL)
 
 
 def foundation_model_ids() -> list[str]:
