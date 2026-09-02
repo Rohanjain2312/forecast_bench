@@ -467,3 +467,22 @@ Fixed two ways:
    and pins the fix (`test_cache_clear_picks_up_a_newly_set_env_var`), so a future change to
    `get_config()`'s caching strategy has to consciously address the notebook contract
    rather than silently reintroduce the trap.
+
+### peft refuses to import unless torchao is at least 0.16.0
+
+Colab preinstalls an old `torchao` (0.10.0). `peft` performs a hard version check at import
+time in `peft.import_utils.is_torchao_available()` and raises `ImportError` if it fails —
+even though this project's LoRA recipe (attention-projection targeting, no quantization)
+never touches torchao's actual functionality. `pip install peft` does not force an upgrade
+of an already-present-but-outdated dependency, so the stale version survives the install
+cell silently until the first `import peft`, several cells later.
+
+Fixed by adding `%pip install -q -U "torchao>=0.16.0"` to notebook 04's install cell.
+
+### Both notebooks moved from `git+https://` to the source tarball
+
+`pip install git+https://github.com/...` failed inside the Colab container with exit 128
+even against a confirmed-public repo (verified with an anonymous `git ls-remote` run
+outside Colab). `pip`'s git codepath shells out to the container's git binary; installing
+from `.../archive/refs/heads/main.tar.gz` instead uses pip's own HTTP fetcher and sidesteps
+whatever was wrong with git in that runtime. Both notebooks now use the tarball URL.
