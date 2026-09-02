@@ -440,3 +440,30 @@ notebook rule exists to prevent.
 folds, imports `forecast_bench` for its heavy work, precedes every code cell with a plain-
 language markdown cell, opens with its Hub prerequisites, stores no outputs, and contains no
 literal secret. A convention nobody checks is a convention that decays.
+
+### Colab hit two setup problems live, both fixed
+
+**`pip install git+https://...` failed with exit 128 inside the Colab runtime**, even
+though the repo is genuinely public (confirmed with an anonymous `git ls-remote` from
+outside Colab). Root cause not fully diagnosed — likely a transient git-subprocess issue in
+that container — but the fix is more robust regardless: install from the GitHub tarball URL
+(`.../archive/refs/heads/main.tar.gz`), which uses pip's own HTTP fetcher instead of
+shelling out to `git clone`.
+
+**`get_config()` is a process-wide `lru_cache` singleton, and the first Colab run poisoned
+it.** Something called `get_config()` before the credentials cell set `os.environ` — most
+likely a re-run of the hub-check cell before the earlier `ModuleNotFoundError` was fixed, in
+the same kernel. Once cached, the object holds empty secrets **for the rest of the
+session**, and no subsequent `os.environ` assignment can reach it. `os.environ` is fine for
+a script invoked fresh each time; it is the wrong default for a notebook whose credential
+cell runs at a UI-controlled moment the module cannot see.
+
+Fixed two ways:
+
+1. Both Colab notebooks now call `get_config.cache_clear()` immediately after loading
+   secrets from `userdata`, so the notebook is correct regardless of what ran before that
+   cell — this is a defensive fix, not just an incident-specific patch.
+2. `tests/test_config.py` reproduces the exact failure (`test_env_var_set_after_first_call_is_invisible_without_a_cache_clear`)
+   and pins the fix (`test_cache_clear_picks_up_a_newly_set_env_var`), so a future change to
+   `get_config()`'s caching strategy has to consciously address the notebook contract
+   rather than silently reintroduce the trap.
