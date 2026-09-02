@@ -52,7 +52,7 @@ create accounts, tokens, or repos.**
 
 ---
 
-### [ ] Step 1 — Repo scaffold
+### [x] Step 1 — Repo scaffold
 
 **Goal:** an installable, lintable, testable empty package.
 
