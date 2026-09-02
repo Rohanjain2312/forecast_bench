@@ -133,7 +133,7 @@ git log --oneline -- PREREGISTRATION.md   # exactly one commit, and no model cod
 
 ---
 
-### [ ] Step 3 — Config layer
+### [x] Step 3 — Config layer
 
 **Goal:** one source of truth for every setting. Nothing downstream reads `os.environ`
 directly.
