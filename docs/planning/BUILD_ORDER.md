@@ -376,7 +376,7 @@ All pass, no xfail remaining.
 
 ## Phase 3 — Models and evaluation
 
-### [ ] Step 12 — Naive and classical models
+### [x] Step 12 — Naive and classical models
 
 **Create** `models/base.py`, `models/registry.py`, `models/naive.py`, and
 `models/classical/{arima,sarimax,har,ar1}.py` per `REPO_STRUCTURE.md` and
