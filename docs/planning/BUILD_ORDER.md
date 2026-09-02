@@ -304,7 +304,7 @@ the future. Frame it as the bug this repo is designed to prevent.
 
 ## Phase 2 — The harness (the most important phase)
 
-### [ ] Step 9 — Leakage tests, written BEFORE the harness
+### [x] Step 9 — Leakage tests, written BEFORE the harness
 
 **Goal:** the guards exist first, so the harness is written against them.
 
