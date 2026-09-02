@@ -474,7 +474,7 @@ the dataset repo has files.
 
 ## Phase 4 — GPU work
 
-### [ ] Step 16 — Write the Colab notebooks
+### [x] Step 16 — Write the Colab notebooks
 
 **Goal:** notebooks the user can open and run without editing anything.
 
