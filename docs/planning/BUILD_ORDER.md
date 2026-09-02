@@ -216,7 +216,7 @@ Print exactly this, filling in the two findings:
 
 ## Phase 1 — Data
 
-### [ ] Step 5 — Data clients
+### [x] Step 5 — Data clients
 
 **Goal:** cached, validated pulls from FRED and Yahoo.
 
