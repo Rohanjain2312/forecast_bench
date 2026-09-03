@@ -282,6 +282,41 @@ def finetune_chronos2_block(
     )
 
 
+def _with_input_embedding_accessors(model):
+    """Give a Chronos-Bolt model the embedding accessors ``peft`` expects.
+
+    Args:
+        model: A ``ChronosBoltModelForForecasting``.
+
+    Returns:
+        The same model, with ``get_input_embeddings`` and ``set_input_embeddings`` bound.
+
+    Note:
+        ``peft.get_peft_model`` calls ``get_input_embeddings()`` while preparing any model,
+        and ``ChronosBoltModelForForecasting`` raises ``NotImplementedError`` for it —
+        reasonably, since a time-series model has no token vocabulary to embed. It does
+        keep T5's ``shared`` module, which is what the base class would have returned.
+
+        Binding the accessors is enough to satisfy peft's preparation step. LoRA here
+        targets the attention projections only, so nothing in the recipe actually reads or
+        writes input embeddings; this removes an assumption peft makes about text models
+        rather than changing what is trained.
+    """
+    import types
+
+    if "shared" not in dict(model.named_children()):
+        raise AttributeError(
+            f"{type(model).__name__} has no 'shared' module; cannot supply the input "
+            "embedding accessors peft requires."
+        )
+
+    model.get_input_embeddings = types.MethodType(lambda self: self.shared, model)
+    model.set_input_embeddings = types.MethodType(
+        lambda self, value: setattr(self, "shared", value), model
+    )
+    return model
+
+
 def finetune_bolt_block(
     values: np.ndarray,
     output_dir: Path,
@@ -328,7 +363,7 @@ def finetune_bolt_block(
         CHRONOS_BOLT_MODEL_ID, device_map=device
     )
     model = get_peft_model(
-        pipeline.model,
+        _with_input_embedding_accessors(pipeline.model),
         LoraConfig(
             r=LORA_RANK,
             lora_alpha=LORA_ALPHA,

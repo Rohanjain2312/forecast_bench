@@ -15,6 +15,10 @@ from forecast_bench.models.foundation.chronos_bolt import (
     BOLT_TRAINED_QUANTILES,
     ChronosBoltZeroShot,
 )
+from forecast_bench.models.foundation.finetune import (
+    _with_input_embedding_accessors,
+    finetune_bolt_block,
+)
 from forecast_bench.models.registry import foundation_model_ids
 
 pytestmark = pytest.mark.slow
@@ -106,3 +110,64 @@ def test_context_window_refreshes_between_folds(training_frame, forecast_index) 
 def test_both_foundation_models_are_registered() -> None:
     """The registry exposes exactly the two zero-shot models the study runs."""
     assert foundation_model_ids() == ["Chronos2-ZeroShot", "ChronosBolt-ZeroShot"]
+
+
+# --- Fine-tuning (Chronos-Bolt) ---------------------------------------------------------
+
+
+def test_bolt_gains_the_embedding_accessors_peft_requires() -> None:
+    """peft.get_peft_model calls get_input_embeddings; Chronos-Bolt raises on it.
+
+    Regression test: this failed live on the first real Bolt fine-tuning run with
+    ``NotImplementedError: get_input_embeddings not auto-handled for
+    ChronosBoltModelForForecasting``. A time-series model reasonably has no token
+    vocabulary, but it does keep T5's ``shared`` module, which is what the accessor
+    should return. See docs/planning/PROGRESS_NOTES.md, Step 16.
+    """
+    from chronos import ChronosBoltPipeline
+
+    from forecast_bench.models.foundation.chronos_bolt import CHRONOS_BOLT_MODEL_ID
+
+    model = ChronosBoltPipeline.from_pretrained(
+        CHRONOS_BOLT_MODEL_ID, device_map="cpu"
+    ).model
+
+    with pytest.raises(NotImplementedError):
+        model.get_input_embeddings()
+
+    patched = _with_input_embedding_accessors(model)
+
+    assert patched.get_input_embeddings() is patched.shared
+
+
+def test_bolt_finetune_produces_a_real_lora_adapter(tmp_path) -> None:
+    """A short Bolt fine-tune trains LoRA weights and writes a loadable adapter.
+
+    Runs on CPU with a tiny step budget. The point is that the whole path executes --
+    peft wrapping, the training loop, validation, early-stopping bookkeeping, and the
+    save -- not that the result forecasts well. This is the least-covered path in the
+    project because it is the one that only runs on Colab.
+
+    ``peft`` lives in the optional ``gpu`` dependency group, so this skips unless it is
+    present: ``poetry run pip install peft`` to exercise it locally.
+    """
+    pytest.importorskip("peft")
+
+    import numpy as np
+
+    values = np.random.default_rng(0).standard_normal(1200).cumsum()
+
+    result = finetune_bolt_block(
+        values,
+        output_dir=tmp_path / "adapter",
+        num_steps=6,
+        eval_every=3,
+        batch_size=4,
+        device="cpu",
+    )
+
+    assert result.trainable_parameters > 0
+    assert result.trainable_parameters < result.total_parameters
+    assert 0 < result.trainable_fraction < 0.05, "LoRA should train a small fraction"
+    assert (tmp_path / "adapter" / "adapter_config.json").is_file()
+    assert (tmp_path / "adapter" / "adapter_model.safetensors").is_file()

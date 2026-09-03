@@ -662,3 +662,32 @@ creating the new model-qualified branch name from the same revision
 old names still exist, so nothing is broken for anything that referenced them. The repo now
 carries 131 revisions: 65 old-format, 65 new-format pointing at identical commits, plus
 `main`.
+
+### Chronos-Bolt LoRA failed: peft assumes every model has token embeddings
+
+First real Bolt fine-tuning run died immediately with
+`NotImplementedError: get_input_embeddings not auto-handled for
+ChronosBoltModelForForecasting`.
+
+`peft.get_peft_model()` calls `get_input_embeddings()` while preparing any model — a
+reasonable assumption for the text models peft was built for, and false for a time-series
+model with no token vocabulary. `ChronosBoltModelForForecasting` inherits the
+`PreTrainedModel` stub that raises rather than overriding it. It does still carry T5's
+`shared` module, which is exactly what the base class would have returned.
+
+Fixed with `_with_input_embedding_accessors()`, which binds `get_input_embeddings` and
+`set_input_embeddings` to that module before the peft call. This satisfies peft's
+preparation step without changing what is trained: LoRA targets the attention projections
+only, so nothing in the recipe reads or writes input embeddings.
+
+**This path was the least-covered code in the project and it showed.** `DECISIONS.md` D13
+predicted Bolt would need the standard `transformers` + `peft` route while Chronos-2 had its
+own `fit()`, and that asymmetry is precisely why Bolt broke and Chronos-2 did not. It was
+also the only path that could not be exercised locally, since `peft` lives in the optional
+`gpu` group.
+
+Now covered: `test_bolt_gains_the_embedding_accessors_peft_requires` asserts the raw model
+raises and the patched one returns `shared`, and
+`test_bolt_finetune_produces_a_real_lora_adapter` runs a genuine six-step CPU fine-tune and
+checks a loadable adapter is written (589,824 trainable parameters, 1.22% of the model).
+Both skip cleanly when `peft` is absent; `poetry run pip install peft` enables them.
