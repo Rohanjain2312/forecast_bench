@@ -547,3 +547,30 @@ asserts the fit function is actually called for every block rather than silently
 from Steps 5-7 are genuine and unaffected, since their tags were correct all along; only
 the Bolt run produced no artifacts and needs to happen again, now that its tags are
 distinct.
+
+### Reopening from GitHub did not pick up the tag-collision fix, and this was the real bug
+
+After the fix above, the user reopened notebook 04 fresh from GitHub and ran all cells.
+Step 8 still logged the **old** tag format (`spy-logrv-armA-2014-full`, no model name) and
+finished with zero real Bolt checkpoints — the exact same failure, after a fresh reopen.
+
+The install cell was `%pip install -q "<tarball-url>"` with no reinstall flags. pip sees
+`forecast-bench` already installed at version `0.1.0` — a version number that has never
+changed — and silently skips reinstalling, regardless of whether the tarball's contents
+changed underneath that version string. Colab reconnected the "freshly opened" notebook to
+the same live backend runtime rather than allocating a new VM, so the stale, pre-fix
+package kept running under a notebook that looked freshly reopened. Confirmed by re-checking
+the Hub: still 0 Bolt checkpoints, and the 13 pre-fix tags were exactly what got matched.
+
+**This means every fix pushed to the repo during this session was at risk of silently not
+reaching a "freshly reopened" notebook**, which defeats the entire point of the reopen
+workflow. Fixed by adding `--force-reinstall --no-deps` to both notebooks' install cells:
+force-reinstall guarantees the package files on disk are always current regardless of what
+pip thinks is "already satisfied"; no-deps keeps it fast by leaving torch, darts and
+chronos-forecasting untouched.
+
+`tests/test_notebooks.py::test_install_cell_forces_a_fresh_reinstall` pins this so it
+cannot silently regress again.
+
+**Consequence:** Step 8 must be re-run once more. Steps 5-7's checkpoints remain correct
+and unaffected.

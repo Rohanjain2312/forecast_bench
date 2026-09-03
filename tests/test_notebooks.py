@@ -93,6 +93,25 @@ def test_notebook_contains_no_literal_secret(path) -> None:
 
 
 @pytest.mark.parametrize("path", COLAB_NOTEBOOKS, ids=lambda p: p.name)
+def test_install_cell_forces_a_fresh_reinstall(path) -> None:
+    """The package install is idempotent-proof against Colab reusing a live runtime.
+
+    Regression test: without --force-reinstall, pip sees forecast-bench already
+    installed (its version number never changes) and silently skips reinstalling. A user
+    who reopens the notebook from GitHub and clicks Run All can then keep running stale
+    code from an earlier session with no indication anything is wrong -- this happened
+    live and cost a full extra fine-tuning cycle before it was diagnosed. See
+    docs/planning/PROGRESS_NOTES.md, Step 16.
+    """
+    source = _code_source(path)
+    assert "archive/refs/heads/main.tar.gz" in source
+    assert "--force-reinstall" in source, (
+        f"{path.name} installs the package without --force-reinstall; a reopened "
+        "notebook can silently run stale code on a reused Colab runtime"
+    )
+
+
+@pytest.mark.parametrize("path", COLAB_NOTEBOOKS, ids=lambda p: p.name)
 def test_notebook_has_no_stored_outputs(path) -> None:
     """Outputs are stripped, so a rerun cannot show stale numbers as if they were fresh."""
     for cell in _cells(path):
