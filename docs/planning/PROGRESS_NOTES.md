@@ -486,3 +486,35 @@ even against a confirmed-public repo (verified with an anonymous `git ls-remote`
 outside Colab). `pip`'s git codepath shells out to the container's git binary; installing
 from `.../archive/refs/heads/main.tar.gz` instead uses pip's own HTTP fetcher and sidesteps
 whatever was wrong with git in that runtime. Both notebooks now use the tarball URL.
+
+### `TRAINING_WINDOWS` conflated "raw days" with "usable training examples"
+
+Hit live on the sample-efficiency sweep, first block, `"1y"`: `ValueError: Training window
+'1y' at 2014-12-31 has 252 observations, fewer than the 533 needed for one example.`
+
+`TRAINING_WINDOWS = {"1y": 252, ...}` treated "1 year" as 252 literal trading days. But
+`CONTEXT_LENGTH = 512` is fixed across every model in the sweep — Chronos-2/Bolt
+fine-tuning, N-BEATS, the DeepAR-class LSTM — specifically so that context length is not a
+confound (IMPLEMENTATION_PLAN.md §4c). A 252-observation slice is *shorter than the context
+window itself* and cannot supply a single `(context, target)` example, on any model.
+
+**The same bug was latent in `models/neural/_darts.py`.** Notebook 05's sample-efficiency
+cell hardcoded the identical `{"1y": 252, ...}` dict and passed it straight to
+`training_window_days`, which `DartsQuantileForecaster` also slices against a fixed
+512-step `input_chunk_length`. It had not failed yet only because the user had not reached
+that cell — it was the same defect, waiting.
+
+**Fix:** moved the concept to `models/base.py` as `SAMPLE_EFFICIENCY_DAYS` (unchanged
+labels: 252/756/2520/None) plus `sample_efficiency_window_size()`, which resolves a label
+to `context_length + horizon + days - 1` — enough raw observations for `days` *distinct
+forecast origins* beyond the one context-plus-horizon window every slice needs at minimum.
+`"1y"` now means 252 separate training examples, not 252 raw observations.
+
+**A second bug fixed alongside it:** notebook 05 had re-hardcoded the training-window dict
+instead of importing it from the package — exactly the notebook-drift the project's own
+rule prohibits ("no modelling logic in notebooks; every heavy call is an import"). It now
+imports `SAMPLE_EFFICIENCY_DAYS` and `sample_efficiency_window_size` directly, so there is
+one definition instead of two that could silently diverge.
+
+`tests/test_sample_efficiency.py` pins the minimum-example-size invariant for every finite
+window and reproduces the exact failing call (first block, `"1y"`) as a regression test.

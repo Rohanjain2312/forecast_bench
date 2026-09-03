@@ -21,9 +21,65 @@ import numpy as np
 import pandas as pd
 
 from forecast_bench.backtest.protocol import QuantileForecast
-from forecast_bench.config import QUANTILE_GRID
+from forecast_bench.config import CONTEXT_LENGTH, MAX_HORIZON, QUANTILE_GRID
 
 logger = logging.getLogger(__name__)
+
+
+#: Trading days of *distinct fine-tuning or training material* per sample-efficiency
+#: slice (DECISIONS.md D9) -- how many separate forecast origins a slice gives a model to
+#: learn from, not a raw observation count. See :func:`sample_efficiency_window_size`.
+SAMPLE_EFFICIENCY_DAYS: dict[str, int | None] = {
+    "1y": 252,
+    "3y": 756,
+    "10y": 2520,
+    "full": None,
+}
+
+
+def sample_efficiency_window_size(
+    label: str,
+    context_length: int = CONTEXT_LENGTH,
+    horizon: int = MAX_HORIZON,
+) -> int | None:
+    """Convert a sample-efficiency label into a raw observation count.
+
+    Args:
+        label: Key into :data:`SAMPLE_EFFICIENCY_DAYS`.
+        context_length: Context length every model in the sweep is fixed to.
+        horizon: Forecast horizon every model in the sweep is fixed to.
+
+    Returns:
+        Raw observations to keep, ending at the fold's origin. ``None`` for ``"full"``,
+        meaning no truncation.
+
+    Raises:
+        KeyError: If ``label`` is not a recognised slice.
+
+    Note:
+        A "1 year" slice does **not** mean literally 252 raw trading days. Every model in
+        the sweep — Chronos-2/Bolt fine-tuning, N-BEATS, the DeepAR-class LSTM — has its
+        context length fixed at :data:`~forecast_bench.config.CONTEXT_LENGTH` (512), so
+        that context length is not a confound across model classes (IMPLEMENTATION_PLAN.md
+        §4c). A window of only 252 raw observations is *shorter than the context window
+        itself* and cannot supply even one ``(context, target)`` training example,
+        regardless of which model receives it.
+
+        "1y" instead means 252 distinct forecast origins' worth of material *beyond* the
+        one context-plus-horizon window every slice needs at minimum:
+        ``context_length + horizon + days - 1`` raw observations. This was found live, on
+        the first Colab run of the sample-efficiency sweep: see
+        docs/planning/PROGRESS_NOTES.md, Step 16.
+    """
+    if label not in SAMPLE_EFFICIENCY_DAYS:
+        raise KeyError(
+            f"Unknown training window {label!r}; expected one of "
+            f"{sorted(SAMPLE_EFFICIENCY_DAYS)}"
+        )
+    days = SAMPLE_EFFICIENCY_DAYS[label]
+    if days is None:
+        return None
+    return context_length + horizon + days - 1
 
 
 def enforce_monotonic(quantiles: dict[float, np.ndarray]) -> dict[float, np.ndarray]:

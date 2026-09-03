@@ -26,6 +26,9 @@ import pandas as pd
 
 from forecast_bench.backtest.splitter import expanding_origin_folds
 from forecast_bench.config import CONTEXT_LENGTH, MAX_HORIZON, RANDOM_SEED, get_config
+from forecast_bench.models.base import (
+    sample_efficiency_window_size,
+)
 from forecast_bench.models.foundation.chronos2 import CHRONOS2_MODEL_ID
 from forecast_bench.models.foundation.chronos_bolt import CHRONOS_BOLT_MODEL_ID
 from forecast_bench.models.foundation.hub import ensure_model_card, revision_tag
@@ -45,14 +48,6 @@ LORA_TARGET_MODULES = ["q", "k", "v", "o"]
 
 #: Early stopping patience, in evaluations, on the fold-local validation slice.
 EARLY_STOPPING_PATIENCE = 3
-
-#: Training-window sizes for the sample-efficiency sweep (DECISIONS.md D9), in trading days.
-TRAINING_WINDOWS: dict[str, int | None] = {
-    "1y": 252,
-    "3y": 756,
-    "10y": 2520,
-    "full": None,
-}
 
 #: Number of validation windows carved from the end of each training block.
 N_VALIDATION_WINDOWS = 32
@@ -97,7 +92,7 @@ def slice_training_window(
     Args:
         series: The full target series.
         origin: The block's origin. Nothing after it is read.
-        training_window: Key into :data:`TRAINING_WINDOWS`.
+        training_window: Key into :data:`~forecast_bench.models.base.SAMPLE_EFFICIENCY_DAYS`.
 
     Returns:
         Training values in observation order.
@@ -105,15 +100,18 @@ def slice_training_window(
     Raises:
         KeyError: If the window name is unknown.
         ValueError: If the slice is too short to build one training example.
-    """
-    if training_window not in TRAINING_WINDOWS:
-        raise KeyError(
-            f"Unknown training window {training_window!r}; expected one of "
-            f"{sorted(TRAINING_WINDOWS)}"
-        )
 
+    Note:
+        ``training_window`` is resolved through
+        :func:`~forecast_bench.models.base.sample_efficiency_window_size`, which converts
+        a label like ``"1y"`` into a raw observation count large enough to contain at
+        least one full context-plus-horizon window. A literal 252-day slice would be
+        shorter than the 512-step context every model in the study uses and could not
+        supply a single training example — see that function's docstring for what went
+        wrong when this treated the label as a raw day count directly.
+    """
     usable = series.loc[series.index <= origin].dropna()
-    limit = TRAINING_WINDOWS[training_window]
+    limit = sample_efficiency_window_size(training_window)
     values = usable.to_numpy(dtype=float)
     if limit is not None:
         values = values[-limit:]
