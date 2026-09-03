@@ -639,3 +639,26 @@ tail-detection matched on a literal `main.tar.gz` that no longer appears in the 
 Both failures are now covered: `test_install_brings_in_dependencies` asserts at least one
 install line runs without `--no-deps`, and `test_install_also_forces_the_package_itself_current`
 asserts one runs with it.
+
+### The tag fix orphaned 65 existing checkpoints, and the resume check dutifully retrained them
+
+Caught only because the user noticed Step 5 *training* when it should have skipped.
+
+Adding the `model` axis to `revision_tag()` changed the tag format from
+`spy-logrv-armA-2014-full` to `spy-logrv-armA-chronos2-2014-full`. The 65 Chronos-2
+checkpoints already on the Hub were all under the old format, so `existing_hub_revisions()`
+found no match for any newly-computed tag and `run_campaign` began refitting every block
+that had already been done — roughly 70 minutes of redundant H100 time across Steps 5-7,
+about to be spent for nothing.
+
+The resume logic was not wrong; it was working exactly as designed against a tag vocabulary
+that had silently shifted underneath it. **Changing an identifier format is a migration, not
+just a code change** — that consequence should have been stated when the fix was made,
+rather than discovered by watching a training bar move.
+
+**Resolved without retraining anything:** all 65 old-format branches were remapped by
+creating the new model-qualified branch name from the same revision
+(`HfApi.create_branch(repo, branch=new, revision=old)`). Additive and non-destructive — the
+old names still exist, so nothing is broken for anything that referenced them. The repo now
+carries 131 revisions: 65 old-format, 65 new-format pointing at identical commits, plus
+`main`.
