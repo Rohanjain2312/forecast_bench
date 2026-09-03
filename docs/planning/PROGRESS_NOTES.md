@@ -716,3 +716,39 @@ pinned by `test_altered_thresholds_still_raise_even_though_absence_does_not`.
 Verified by building the wheel, installing it into a clean venv with no repository
 anywhere near it, and importing `forecast_bench.evaluation.regimes` from `/tmp`: constants
 load as 15.9 / 22.5582 and regime assignment works.
+
+### Notebook 05: Tensor Cores enabled, and two problems found in a dry run
+
+Step 4 was taking over two hours on an A100, so `torch.set_float32_matmul_precision` was
+enabled at the user's request. Rather than a bare line in a cell, this landed as
+`config.enable_tensor_cores()`, off by default and switched on explicitly in notebook 05.
+
+The reason it is opt-in rather than always-on: it changes numerics, so it must apply
+**uniformly across everything being compared**. The sample-efficiency sweep retrains the
+same models on nested windows and its `full` point is supposed to reproduce the headline
+run; enabling TF32 partway through would quietly break that. Notebook 04's Chronos
+fine-tuning ran without it, which is fine — the two notebooks produce separate model
+families compared through forecasts, not weights.
+
+Before handing the notebook back, its entire code path was executed locally on CPU at
+reduced scale (4,000 synthetic observations, 1 epoch, context 64). That surfaced two things
+neither the tests nor a reading of the notebook had caught.
+
+**1. Step 6 re-ran Step 4 identically, for hours.** `sample_efficiency_window_size("full")`
+returns `None`, meaning no truncation — so the sweep's `full` iteration was a byte-identical
+repeat of the Step 4 call. The sweep now reuses Step 4's in-memory result (falling back to
+its saved parquet in a fresh kernel), which removes roughly two hours of GPU time *and*
+guarantees the curve's endpoint is exactly the headline number rather than a second run
+that could drift from it.
+
+**2. The sweep would have corrupted the headline table.** `load_forecasts()` globs every
+parquet in `forecasts/`, and the sweep file contains a full duplicate of the headline run
+in its `full` slice. Every headline metric would have been averaged over duplicated rows
+and `n_origins` inflated — silently, with no error anywhere.
+
+Fixed by separating the sweep into `forecasts/sample_efficiency/`, which the deliberately
+non-recursive headline glob then excludes by construction; `push_forecasts` switched to
+`rglob` so the sweep still publishes, and `build_results` scores it through a dedicated
+`load_sample_efficiency()`. Verified end to end: the headline loader returns exactly the
+Step 4 row count with the sweep on disk. Pinned by
+`test_sweep_directory_is_excluded_from_the_headline_glob`.

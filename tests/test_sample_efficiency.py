@@ -86,3 +86,38 @@ def test_slice_training_window_rejects_a_window_shorter_than_the_train_span() ->
 
     with pytest.raises(ValueError, match="fewer than"):
         slice_training_window(short_series, short_index[-1], "1y")
+
+
+def test_sweep_directory_is_excluded_from_the_headline_glob(
+    tmp_path, monkeypatch
+) -> None:
+    """The sweep lives below forecasts/, so the headline loader cannot double-count it.
+
+    Regression test for a bug found while dry-running notebook 05: the sweep's ``full``
+    slice is the same computation as the headline run, so its rows duplicate that run
+    exactly. ``load_forecasts()`` globbed ``forecasts/*.parquet``, which would have
+    silently averaged every headline metric over duplicated rows and inflated
+    ``n_origins``. See docs/planning/PROGRESS_NOTES.md, Step 16.
+    """
+    import pandas as pd
+
+    from forecast_bench.config import get_config
+
+    monkeypatch.setenv("RESULTS_DIR", str(tmp_path))
+    get_config.cache_clear()
+    config = get_config()
+    config.ensure_dirs()
+
+    assert config.sample_efficiency_dir.parent == config.forecasts_dir
+
+    frame = pd.DataFrame({"series": ["spy_logrv"], "model_id": ["N-BEATS"]})
+    frame.to_parquet(config.forecasts_dir / "headline.parquet", index=False)
+    frame.to_parquet(config.sample_efficiency_dir / "spy_logrv.parquet", index=False)
+
+    top_level = sorted(config.forecasts_dir.glob("*.parquet"))
+    recursive = sorted(config.forecasts_dir.rglob("*.parquet"))
+
+    assert len(top_level) == 1, "the sweep leaked into the headline glob"
+    assert len(recursive) == 2, "push_forecasts must still find the sweep"
+
+    get_config.cache_clear()

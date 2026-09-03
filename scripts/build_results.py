@@ -28,6 +28,13 @@ def load_forecasts() -> pd.DataFrame:
 
     Raises:
         FileNotFoundError: If no forecast parquet exists yet.
+
+    Note:
+        Deliberately **not** recursive. The sample-efficiency sweep lives in
+        ``forecasts/sample_efficiency/`` and its ``full`` slice repeats the headline run
+        exactly, so globbing recursively here would double-count those rows into every
+        table: inflated ``n_origins``, and metrics silently averaged over duplicates.
+        :func:`load_sample_efficiency` reads that directory separately.
     """
     directory = get_config().forecasts_dir
     paths = sorted(directory.glob("*.parquet"))
@@ -36,6 +43,21 @@ def load_forecasts() -> pd.DataFrame:
             f"No forecast parquets in {directory}. Run scripts.run_backtest first."
         )
     logger.info("Loading %d forecast files", len(paths))
+    return pd.concat([pd.read_parquet(path) for path in paths], ignore_index=True)
+
+
+def load_sample_efficiency() -> pd.DataFrame | None:
+    """Load the sample-efficiency sweep, if it has been run.
+
+    Returns:
+        The sweep frame, or ``None`` when the sweep directory is empty. Returning ``None``
+        rather than raising lets a partial run still build every other table.
+    """
+    directory = get_config().sample_efficiency_dir
+    paths = sorted(directory.glob("*.parquet")) if directory.is_dir() else []
+    if not paths:
+        return None
+    logger.info("Loading %d sample-efficiency files", len(paths))
     return pd.concat([pd.read_parquet(path) for path in paths], ignore_index=True)
 
 
@@ -83,7 +105,6 @@ def build_tables(
         "cadence_comparison": agg.cadence_comparison,
         "covariate_comparison": agg.covariate_comparison,
         "regime_stratified": agg.regime_table,
-        "sample_efficiency": agg.sample_efficiency_table,
         "contamination_free": agg.contamination_free_table,
     }
     for name, builder in optional.items():
@@ -95,6 +116,23 @@ def build_tables(
             tables[name] = pd.concat(frames, ignore_index=True)
         except (ValueError, KeyError) as error:
             logger.info("Skipping %s: %s", name, error)
+
+    # The sweep is scored from its own directory, never from `forecasts`, so that its
+    # duplicated `full` slice cannot leak into the tables above.
+    sweep = load_sample_efficiency()
+    if sweep is None:
+        logger.info("Skipping sample_efficiency: no sweep files on disk")
+    else:
+        try:
+            tables["sample_efficiency"] = pd.concat(
+                [
+                    agg.sample_efficiency_table(block, target=targets.get(series))
+                    for series, block in sweep.groupby("series")
+                ],
+                ignore_index=True,
+            )
+        except (ValueError, KeyError) as error:
+            logger.info("Skipping sample_efficiency: %s", error)
     return tables
 
 

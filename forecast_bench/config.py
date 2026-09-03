@@ -217,6 +217,17 @@ class Config(BaseSettings):
         return self.results_dir / "forecasts"
 
     @property
+    def sample_efficiency_dir(self) -> Path:
+        """Sweep forecasts, kept out of ``forecasts/`` itself.
+
+        The sweep's ``full`` slice is the same computation as the headline run, so its rows
+        duplicate that run exactly. ``load_forecasts()`` globs ``forecasts/*.parquet``
+        non-recursively, so keeping the sweep one level down means the headline table
+        cannot silently double-count it.
+        """
+        return self.forecasts_dir / "sample_efficiency"
+
+    @property
     def metrics_dir(self) -> Path:
         """Aggregated results tables produced by ``evaluation/aggregate.py``."""
         return self.results_dir / "metrics"
@@ -232,6 +243,7 @@ class Config(BaseSettings):
             self.raw_dir,
             self.processed_dir,
             self.forecasts_dir,
+            self.sample_efficiency_dir,
             self.metrics_dir,
             self.figures_dir,
         ):
@@ -278,6 +290,60 @@ def get_config() -> Config:
         The singleton configuration object.
     """
     return Config()
+
+
+def enable_tensor_cores(precision: str = "high") -> str:
+    """Let matmuls use the GPU's Tensor Cores, trading a little precision for speed.
+
+    Args:
+        precision: ``"high"`` (TF32, ~10-bit mantissa), ``"medium"`` (bfloat16, fastest),
+            or ``"highest"`` (full fp32, PyTorch's default).
+
+    Returns:
+        The precision actually in effect. ``"highest"`` when no CUDA device is present,
+        since the setting only affects Tensor Core hardware.
+
+    Raises:
+        ValueError: If ``precision`` is not one of the three accepted values.
+
+    Note:
+        Off by default, and deliberately so. This changes numerics, so it must be applied
+        **uniformly across everything being compared** or the comparison is not one. The
+        sample-efficiency sweep in particular retrains the same models on nested windows
+        and expects its ``full`` point to reproduce the headline run; mixing precisions
+        between them would quietly break that.
+
+        ``"high"`` keeps a 10-bit mantissa, which is far below the noise floor of a
+        financial forecasting task and is the standard recommendation for neural training.
+        It does not affect the classical models, which run on CPU, or the Chronos
+        fine-tuning in notebook 04, which was run without it.
+    """
+    permitted = {"highest", "high", "medium"}
+    if precision not in permitted:
+        raise ValueError(
+            f"precision must be one of {sorted(permitted)}, got {precision!r}"
+        )
+
+    import torch
+
+    if not torch.cuda.is_available():
+        logger.info(
+            "No CUDA device; leaving matmul precision at 'highest'. This setting only "
+            "affects Tensor Core hardware."
+        )
+        return "highest"
+
+    torch.set_float32_matmul_precision(precision)
+    torch.backends.cuda.matmul.allow_tf32 = precision != "highest"
+    torch.backends.cudnn.allow_tf32 = precision != "highest"
+
+    logger.info(
+        "Matmul precision set to %r on %s. Every model trained in this process now uses "
+        "it; anything compared against these results must too.",
+        precision,
+        torch.cuda.get_device_name(0),
+    )
+    return precision
 
 
 def setup_logging(level: str | None = None) -> None:

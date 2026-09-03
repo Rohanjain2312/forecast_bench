@@ -181,8 +181,10 @@ def push_forecasts(
     source = directory or config.forecasts_dir
 
     uploaded: list[str] = []
-    for path in sorted(source.glob("*.parquet")):
-        target = f"forecasts/{path.name}"
+    # rglob, not glob: the sample-efficiency sweep lives in a subdirectory so that
+    # load_forecasts() cannot double-count it, but it still has to be published.
+    for path in sorted(source.rglob("*.parquet")):
+        target = f"forecasts/{path.relative_to(source).as_posix()}"
         api.upload_file(
             path_or_fileobj=str(path),
             path_in_repo=target,
