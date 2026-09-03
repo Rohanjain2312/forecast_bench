@@ -112,6 +112,37 @@ def test_install_cell_forces_a_fresh_reinstall(path) -> None:
 
 
 @pytest.mark.parametrize("path", COLAB_NOTEBOOKS, ids=lambda p: p.name)
+def test_install_url_is_cache_busted(path) -> None:
+    """The install URL differs on every run, so no cache anywhere can serve stale code.
+
+    Regression test: --force-reinstall alone was not enough. The notebook was reopened
+    fresh from GitHub twice and both times ran stale, pre-fix code, because the tarball
+    URL never changes even though its content does, and something between Colab and
+    GitHub (most likely pip's own HTTP cache) kept serving what it had already fetched.
+    See docs/planning/PROGRESS_NOTES.md, Step 16.
+    """
+    source = _code_source(path)
+    assert (
+        "int(time.time())" in source or "time.time()" in source
+    ), f"{path.name} does not appear to cache-bust its install URL"
+    assert "_cb=" in source
+
+
+def test_finetune_notebook_verifies_the_install_before_using_it() -> None:
+    """A loud, immediate check that the fix this session needed is actually present.
+
+    Better than trusting the install cell silently: if some cache anywhere still serves
+    stale code despite the measures above, this fails right after install with an
+    actionable message, instead of a campaign silently pushing nothing 20 minutes later.
+    """
+    path = NOTEBOOK_DIR / "04_colab_finetune_chronos.ipynb"
+    source = _code_source(path)
+    assert "inspect.signature(revision_tag)" in source
+    assert "assert" in source
+    assert "Restart session" in source
+
+
+@pytest.mark.parametrize("path", COLAB_NOTEBOOKS, ids=lambda p: p.name)
 def test_notebook_has_no_stored_outputs(path) -> None:
     """Outputs are stripped, so a rerun cannot show stale numbers as if they were fresh."""
     for cell in _cells(path):

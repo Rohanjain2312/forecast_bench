@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "forecast-bench"
-version = "0.1.0"
+version = "0.2.0"
 description = "An honestly-reported forecasting benchmark: classical statistical models vs. a fine-tuned time-series foundation model, on real financial data, with a leakage-safe backtest."
 authors = ["Rohan Jain <rohanjain2312@gmail.com>"]
 license = "MIT"

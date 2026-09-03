@@ -4,4 +4,4 @@ Kept in its own module so that ``pyproject.toml``, the package, and any publishe
 artifact can all reference one string without importing the whole package.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

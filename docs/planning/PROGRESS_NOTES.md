@@ -574,3 +574,33 @@ cannot silently regress again.
 
 **Consequence:** Step 8 must be re-run once more. Steps 5-7's checkpoints remain correct
 and unaffected.
+
+### `--force-reinstall` was not enough either — cache-busted the install URL
+
+The user reopened notebook 04 fresh from GitHub a **second** time, after the
+`--force-reinstall --no-deps` fix landed, and still got zero real Bolt checkpoints with the
+old pre-fix tag format in the logs.
+
+Verified directly that GitHub itself was not the problem: a fresh `curl` of the exact
+tarball URL used by the notebook, run from outside Colab, returned the current
+`revision_tag()` with the `model` parameter already in it. So the fix was genuinely
+published and reachable — the staleness was happening somewhere between Colab and GitHub
+(most likely pip's own HTTP response cache, keyed by URL; `--force-reinstall` forces pip to
+*reinstall*, but does not by itself force pip to *re-fetch* if it believes it already has a
+cached response for that exact URL).
+
+Since the exact caching layer at fault could not be directly inspected, the fix defeats the
+class of problem rather than one specific cache: the install line now appends a
+`?_cb=<unix-timestamp>` query parameter computed fresh at cell-execution time, so every
+run requests a **different URL** and no cache anywhere in the path — pip's, a proxy's, or
+otherwise — has anything to serve.
+
+**Also added a loud, immediate verification cell** right after install in notebook 04: it
+asserts `revision_tag`'s signature carries the `model` parameter and raises with an
+explicit "Restart session" instruction if not. This turns any future recurrence of this
+class of problem — in this fix or a later one — into an obvious failure at cell 2, not a
+silent no-op discovered only by checking the Hub after a full campaign finishes.
+
+**Also bumped the package version, 0.1.0 → 0.2.0**, as defense in depth: a real version
+change means `pip install <url>` correctly detects the update on its own even without
+`--force-reinstall`, for any future run of this or another notebook.
