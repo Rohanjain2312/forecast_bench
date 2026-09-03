@@ -518,3 +518,32 @@ one definition instead of two that could silently diverge.
 
 `tests/test_sample_efficiency.py` pins the minimum-example-size invariant for every finite
 window and reproduces the exact failing call (first block, `"1y"`) as a regression test.
+
+### Revision tags collided across models: Bolt fine-tuning silently pushed nothing
+
+Hit live at the end of notebook 04: Step 8 (Chronos-Bolt) reported success, no error, and
+the run finished — but `existing_hub_revisions()` afterward showed **zero** Bolt
+checkpoints on `forecastbench-chronos`.
+
+`revision_tag(series, arm, block, training_window)` had no model axis, so Chronos-2's and
+Chronos-Bolt's full-window tags for the same `(series, arm, block)` were byte-identical:
+both resolved to `"spy-logrv-armA-2014-full"`. Step 5 (Chronos-2) pushed those 13 tags
+first. When Step 8 (Bolt) ran, every tag it computed already existed on the Hub — from a
+different model entirely — so `run_campaign`'s resume check (working exactly as designed)
+skipped all 13 blocks as "already done." No fit call, no push, no error: the run looked
+identical to a fully successful one.
+
+This is a gap in `IMPLEMENTATION_PLAN.md` §4c itself, which specifies "one revision tag per
+(series, arm, block, training-window) combination" — a four-tuple that has no room for
+which base checkpoint the adapter belongs to, even though D13 requires fine-tuning two
+different base models. Fixed by adding `model: str = "chronos2"` to `revision_tag()`,
+defaulting to the value that keeps every already-pushed Chronos-2 tag unchanged.
+
+`tests/test_foundation_hub.py` reproduces the exact failure end-to-end: a `run_campaign`
+call for Bolt, against a Hub state carrying only Chronos-2's tags for the same blocks, now
+asserts the fit function is actually called for every block rather than silently skipped.
+
+**Consequence:** Step 8 needs to be re-run. Nothing was lost — the Chronos-2 checkpoints
+from Steps 5-7 are genuine and unaffected, since their tags were correct all along; only
+the Bolt run produced no artifacts and needs to happen again, now that its tags are
+distinct.

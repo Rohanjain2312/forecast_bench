@@ -537,7 +537,7 @@ def run_campaign(
     results: list[FinetuneResult] = []
     for window in training_windows:
         for block, origin in sorted(block_origins.items()):
-            tag = revision_tag(series, arm, block, window)
+            tag = revision_tag(series, arm, block, window, model=model)
             if tag in already:
                 logger.info("Skipping %s; already on the Hub", tag)
                 results.append(FinetuneResult(tag=tag, skipped=True))

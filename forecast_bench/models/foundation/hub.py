@@ -60,7 +60,7 @@ reproducible from the exact weights that produced it:
 
 ```python
 from forecast_bench.models.foundation.hub import load_adapter
-adapter = load_adapter("spy-logrv-armA-full-v1")
+adapter = load_adapter("spy-logrv-armA-chronos2-2020-full")
 ```
 
 ## Honest caveats
@@ -115,7 +115,11 @@ def ensure_model_card(repo_id: str | None = None) -> str:
 
 
 def revision_tag(
-    series: str, arm: str, block: int | str, training_window: str = "full"
+    series: str,
+    arm: str,
+    block: int | str,
+    training_window: str = "full",
+    model: str = "chronos2",
 ) -> str:
     """Build the revision tag for one fine-tuning configuration.
 
@@ -124,8 +128,18 @@ def revision_tag(
         arm: ``"A"`` or ``"B"``.
         block: Block identifier, normally the calendar year.
         training_window: Sample-efficiency slice, e.g. ``"1y"`` or ``"full"``.
+        model: Which base checkpoint this adapter fine-tunes, ``"chronos2"`` or ``"bolt"``.
 
     Returns:
-        A tag such as ``"spy-logrv-armA-2020-full"``.
+        A tag such as ``"spy-logrv-armA-chronos2-2020-full"``.
+
+    Note:
+        ``model`` is a required axis, not decoration. Without it, Chronos-2's and
+        Chronos-Bolt's full-window tags for the same (series, arm, block) collide exactly
+        — both would be ``"spy-logrv-armA-2020-full"``. Whichever model finishes first
+        pushes that tag, and the other model's fine-tuning is then silently skipped forever
+        as "already on the Hub," with no error at any point. This happened live: Step 8's
+        Bolt run reported success and pushed nothing, because every tag it computed already
+        existed from Step 5's Chronos-2 run. See docs/planning/PROGRESS_NOTES.md, Step 16.
     """
-    return f"{series.replace('_', '-')}-arm{arm}-{block}-{training_window}"
+    return f"{series.replace('_', '-')}-arm{arm}-{model}-{block}-{training_window}"
