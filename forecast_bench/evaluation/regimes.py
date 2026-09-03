@@ -48,14 +48,30 @@ def _load_thresholds(path: Path = REGIMES_CONFIG_PATH) -> tuple[float, float]:
         A ``(calm_upper, normal_upper)`` pair.
 
     Raises:
-        FrozenThresholdError: If the file is missing, malformed, or its values differ from
-            the committed constants.
+        FrozenThresholdError: If the file is malformed, or its values differ from the
+            committed constants.
+
+    Note:
+        A *missing* file is not an error, for the same reason as ``base.yaml`` in
+        :mod:`forecast_bench.config`: when the package is pip-installed from GitHub — how
+        Colab and the Hugging Face Space consume it — only ``forecast_bench/`` ships, so
+        ``experiments/`` does not exist at all.
+
+        This is safe because :data:`EXPECTED_CALM_UPPER` and :data:`EXPECTED_NORMAL_UPPER`
+        **are** the frozen values, duplicated into this module deliberately. The YAML is a
+        cross-check that makes any change to them show up in a diff, not the source of
+        truth. Absence falls back to the constants; disagreement stays fatal.
     """
     if not path.is_file():
-        raise FrozenThresholdError(
-            f"{path} is missing. The regime thresholds are data, not configuration, and "
-            "must not be recomputed. Restore the committed file."
+        logger.debug(
+            "regimes.yaml not found at %s; falling back to the committed constants "
+            "(%.4f, %.4f). Expected when the package is installed rather than used from "
+            "a clone.",
+            path,
+            EXPECTED_CALM_UPPER,
+            EXPECTED_NORMAL_UPPER,
         )
+        return EXPECTED_CALM_UPPER, EXPECTED_NORMAL_UPPER
 
     loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
     try:

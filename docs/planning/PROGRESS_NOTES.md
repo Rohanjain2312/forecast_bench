@@ -691,3 +691,28 @@ raises and the patched one returns `shared`, and
 `test_bolt_finetune_produces_a_real_lora_adapter` runs a genuine six-step CPU fine-tune and
 checks a loadable adapter is written (589,824 trainable parameters, 1.22% of the model).
 Both skip cleanly when `peft` is absent; `poetry run pip install peft` enables them.
+
+### `regimes.yaml` raised on absence, breaking every pip-installed consumer
+
+Notebook 05, Step 4: `FrozenThresholdError: /usr/local/lib/python3.13/dist-packages/
+experiments/configs/regimes.yaml is missing.`
+
+Only `forecast_bench/` ships in the wheel — confirmed by building it and listing the
+contents: **47 files, zero `.yaml`, no `experiments/` at all.** So the path
+`PROJECT_ROOT / "experiments" / "configs" / "regimes.yaml"` cannot resolve in any installed
+environment, including Colab and the Hugging Face Space.
+
+This is the second instance of one bug. `config.py::_verify_base_yaml_agrees` already
+handles exactly this for `base.yaml` — its docstring even spells out the reasoning
+("A *missing* file is not an error... only `forecast_bench/` ships") — and I did not apply
+the same treatment to `regimes.yaml` when writing it. The two now behave identically.
+
+Absence is safe because `EXPECTED_CALM_UPPER`/`EXPECTED_NORMAL_UPPER` **are** the frozen
+values, duplicated into the module deliberately. The YAML is a cross-check that makes any
+change to them appear in a diff, not the source of truth. A missing file cannot silently
+recompute anything; only a present-and-different file could, and that still raises —
+pinned by `test_altered_thresholds_still_raise_even_though_absence_does_not`.
+
+Verified by building the wheel, installing it into a clean venv with no repository
+anywhere near it, and importing `forecast_bench.evaluation.regimes` from `/tmp`: constants
+load as 15.9 / 22.5582 and regime assignment works.

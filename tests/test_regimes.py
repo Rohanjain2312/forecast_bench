@@ -57,10 +57,34 @@ def test_altered_thresholds_raise_at_load(tmp_path) -> None:
         _load_thresholds(altered)
 
 
-def test_missing_config_raises(tmp_path) -> None:
-    """A missing thresholds file is an error, not a silent recomputation."""
-    with pytest.raises(FrozenThresholdError, match="missing"):
-        _load_thresholds(tmp_path / "absent.yaml")
+def test_missing_config_falls_back_to_the_committed_constants(tmp_path) -> None:
+    """An absent file yields the frozen values rather than raising.
+
+    Regression test: this used to raise, which broke every pip-installed consumer. Only
+    ``forecast_bench/`` ships in the package, so ``experiments/configs/regimes.yaml``
+    does not exist on Colab or in the Hugging Face Space at all. It failed live in
+    notebook 05.
+
+    This is safe precisely because the constants in the module *are* the frozen values —
+    the YAML is a cross-check that surfaces changes in a diff, not the source of truth.
+    A missing file cannot silently recompute anything; only a present-and-different file
+    could, and that still raises.
+    """
+    calm, normal = _load_thresholds(tmp_path / "absent.yaml")
+
+    assert calm == EXPECTED_CALM_UPPER
+    assert normal == EXPECTED_NORMAL_UPPER
+
+
+def test_altered_thresholds_still_raise_even_though_absence_does_not(tmp_path) -> None:
+    """Tolerating absence must not weaken the guard against a *changed* file."""
+    altered = tmp_path / "regimes.yaml"
+    altered.write_text(
+        yaml.safe_dump({"thresholds": {"calm_upper": 15.9, "normal_upper": 99.0}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(FrozenThresholdError, match="committed values"):
+        _load_thresholds(altered)
 
 
 @pytest.mark.parametrize(
