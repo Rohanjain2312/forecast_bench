@@ -604,3 +604,38 @@ silent no-op discovered only by checking the Hub after a full campaign finishes.
 **Also bumped the package version, 0.1.0 → 0.2.0**, as defense in depth: a real version
 change means `pip install <url>` correctly detects the update on its own even without
 `--force-reinstall`, for any future run of this or another notebook.
+
+### `--no-deps` broke the fresh-VM case, and only a fresh VM could reveal it
+
+The user used "Disconnect and delete runtime" to guarantee a genuinely new VM, reopened
+notebook 04, and cell 2b failed with `ModuleNotFoundError: No module named
+'pydantic_settings'`.
+
+Cause: the install cell used `--force-reinstall --no-deps` on its *only* install line.
+`--no-deps` installs `forecast_bench` and none of its dependencies. Every previous run had
+reused a runtime where pydantic-settings, darts and chronos-forecasting were already
+present from the original `git+https://` install, so the flag looked harmless. On a truly
+fresh VM the package installed with no dependencies at all and died on its first import.
+
+The irony is that this bug was only reachable *because* the earlier advice to force a
+brand-new VM finally worked — every prior "fresh reopen" had silently reconnected to the
+old runtime and masked it.
+
+**Fix:** two install lines, both load-bearing.
+
+1. `pip install -q "<url>"` — with dependencies. This is what makes a fresh VM work.
+2. `pip install -q --force-reinstall --no-deps "<url>"` — the package alone, forced. pip
+   will not reinstall a package it considers version-satisfied, so this is what guarantees
+   current *code* on a runtime that has seen an earlier version. `--no-deps` keeps it fast.
+
+The `?_cb=<timestamp>` cache-bust applies to both.
+
+A second defect was introduced and caught in the same edit: the automated rewrite of the
+install cell silently dropped the `peft`, `accelerate` and `torchao` lines, because its
+tail-detection matched on a literal `main.tar.gz` that no longer appears in the rewritten
+`pip install` lines (they interpolate `{_tarball_url}` instead). Restored, and pinned by
+`test_finetune_notebook_still_installs_peft_and_torchao`.
+
+Both failures are now covered: `test_install_brings_in_dependencies` asserts at least one
+install line runs without `--no-deps`, and `test_install_also_forces_the_package_itself_current`
+asserts one runs with it.

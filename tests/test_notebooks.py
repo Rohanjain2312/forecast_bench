@@ -143,6 +143,53 @@ def test_finetune_notebook_verifies_the_install_before_using_it() -> None:
 
 
 @pytest.mark.parametrize("path", COLAB_NOTEBOOKS, ids=lambda p: p.name)
+def test_install_brings_in_dependencies(path) -> None:
+    """At least one package install runs *without* --no-deps.
+
+    Regression test for a bug shipped and hit on a genuinely fresh Colab VM: the install
+    cell used --no-deps on every line, which had looked harmless only because every prior
+    run reused a runtime where the dependencies were already present from an earlier
+    install. On a new VM it installed forecast_bench and none of pydantic-settings, darts
+    or chronos-forecasting, so the very first import died. See
+    docs/planning/PROGRESS_NOTES.md, Step 16.
+    """
+    install_lines = [
+        line
+        for line in _code_source(path).splitlines()
+        if "pip install" in line and "_tarball_url" in line
+    ]
+    assert install_lines, f"{path.name} has no package install line"
+    assert any("--no-deps" not in line for line in install_lines), (
+        f"{path.name} installs the package only with --no-deps, so a fresh VM would "
+        "get no dependencies at all"
+    )
+
+
+@pytest.mark.parametrize("path", COLAB_NOTEBOOKS, ids=lambda p: p.name)
+def test_install_also_forces_the_package_itself_current(path) -> None:
+    """A --force-reinstall --no-deps line guarantees current code on a reused runtime."""
+    install_lines = [
+        line
+        for line in _code_source(path).splitlines()
+        if "pip install" in line and "_tarball_url" in line
+    ]
+    assert any(
+        "--force-reinstall" in line and "--no-deps" in line for line in install_lines
+    ), f"{path.name} never forces the package itself to be reinstalled"
+
+
+def test_finetune_notebook_still_installs_peft_and_torchao() -> None:
+    """The LoRA dependencies survive any rewrite of the install cell.
+
+    These were briefly dropped by an automated edit to the install cell; peft is required
+    for Chronos-Bolt fine-tuning and torchao must be upgraded or peft will not import.
+    """
+    source = _code_source(NOTEBOOK_DIR / "04_colab_finetune_chronos.ipynb")
+    assert "peft" in source
+    assert "torchao" in source
+
+
+@pytest.mark.parametrize("path", COLAB_NOTEBOOKS, ids=lambda p: p.name)
 def test_notebook_has_no_stored_outputs(path) -> None:
     """Outputs are stripped, so a rerun cannot show stale numbers as if they were fresh."""
     for cell in _cells(path):
