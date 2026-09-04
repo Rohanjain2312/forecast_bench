@@ -3621,7 +3621,7 @@ version = "0.20.0"
 description = "Parameter-Efficient Fine-Tuning (PEFT)"
 optional = false
 python-versions = ">=3.10.0"
-groups = ["gpu"]
+groups = ["main", "gpu"]
 files = [
     {file = "peft-0.20.0-py3-none-any.whl", hash = "sha256:0fbba16ffebfad3de96e06f2da6860fd860292324b85b6141909fa1e26ea9233"},
     {file = "peft-0.20.0.tar.gz", hash = "sha256:4769c8093a4ca145fd6fb3fd4dd50449675f5fe46434ad1e98b285a132d4b1d0"},
@@ -6471,4 +6471,4 @@ repair = ["scikit-learn (>=1.0)", "scipy (>=1.6.3)"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "2846b0a1496935a26493c9cfd34977e61dcff9659c70b09ed50ac3d469c68c39"
+content-hash = "a4674974626f9a75a3cd8909d27307affe803c64522fc6118f45d76b1d5eec67"

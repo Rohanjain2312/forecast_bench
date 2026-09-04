@@ -15,10 +15,18 @@ from forecast_bench.models.registry import (
     BASELINE_MODEL_ID,
     all_registered_model_classes,
     classical_panel,
+    finetuned_model_ids,
 )
 
 MODEL_CLASSES = all_registered_model_classes()
-MODEL_IDS = sorted(MODEL_CLASSES)
+
+#: Models covered by the generic protocol suite.
+#:
+#: The fine-tuned models are excluded here and covered by ``test_foundation_finetuned.py``
+#: instead. They cannot be built from the generic fixtures: each resolves a Hub revision
+#: from its series name and the fold's calendar year, so it needs a real series and an
+#: origin inside the fine-tuned span rather than a synthetic frame ending in 2011.
+MODEL_IDS = sorted(set(MODEL_CLASSES) - set(finetuned_model_ids()))
 
 #: Lightweight settings for the models that would otherwise train a real network here.
 #:

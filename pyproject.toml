@@ -21,6 +21,9 @@ darts = ">=0.30"
 # "The (Py)Torch module could not be imported" even when torch itself is present.
 pytorch-lightning = ">=2.3"
 chronos-forecasting = ">=1.4"
+# peft is needed to *load* the fine-tuned LoRA adapters, not just to train them, so
+# it is a runtime dependency of the local benchmark rather than Colab-only.
+peft = ">=0.11"
 fredapi = ">=0.5"
 yfinance = ">=0.2.40"
 huggingface-hub = ">=0.24"

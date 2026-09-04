@@ -826,3 +826,41 @@ reuse of the Step 4 result read only from local disk, which is precisely what a 
 destroys. It now looks in three places in order of cost — memory, this VM's disk, then the
 Hub via `data.hub.load_forecast_file()` — so a completed stage is recovered rather than
 recomputed no matter which kernel or VM asks for it.
+
+## Step 17 prep — the fine-tuned foundation models (2026-09-04)
+
+Notebook 05 completed cleanly: 137 origins on `spy_logrv` (7 models), 136 on `dgs10`
+(6 models), and a four-window sweep at 137 origins each, all pushed to the Hub with zero
+non-finite forecasts. The D9 curve has real signal — DeepAR-LSTM goes from 3.925 MAE at
+`1y` (worse than a random walk's 1.026) to 0.840 at `full`, monotonically, which is exactly
+the overfitting-at-small-data shape the sweep exists to expose. Classical models are flat
+across windows, as they must be, which is a useful internal consistency check.
+
+**The gap that blocked Step 17:** 78 LoRA adapters existed on the Hub and nothing could
+load them. `IMPLEMENTATION_PLAN.md` §4c specifies each foundation model as "zero-shot +
+fine-tuned … loads fine-tuned weights from `forecastbench-chronos` by revision tag"; only
+the zero-shot half had been built.
+
+`ChronosFineTuned` resolves its adapter from the fold's own origin year, so under the
+matched cadence — which refits at block boundaries — a fold loads exactly the adapter fitted
+on data ending at that boundary and never one trained on data the fold cannot see. The
+leakage-safety of the fine-tuned arm therefore falls out of the tag scheme rather than
+depending on bookkeeping.
+
+**The trap worth recording.** `PeftModel.from_pretrained` *wraps the model object it is
+given*. The zero-shot pipelines are cached per process, so applying an adapter to a cached
+base would have turned every zero-shot model in the run into a fine-tuned one — the same
+weights object, now wrapped — silently collapsing the study's central comparison with
+nothing raised anywhere. `load_finetuned_pipeline` therefore always loads a fresh base, and
+`test_loading_an_adapter_does_not_contaminate_the_zero_shot_model` asserts a zero-shot
+forecast is bit-identical before and after a fine-tuned model has been used.
+
+Adapter coverage was verified against the Hub rather than assumed, and the registry encodes
+what is actually there: Chronos-2 on both series, Chronos-Bolt on the volatility track only,
+matching D13's core/secondary split. Registering a model whose adapters do not exist would
+fail mid-run at whichever block first went looking.
+
+`peft` moved from the optional `gpu` group into the main dependencies: it is needed to
+*load* adapters, not only to train them, so the local benchmark depends on it.
+
+Full panel now: **11 models on `spy_logrv`**, 9 on `dgs10`.

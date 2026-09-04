@@ -9,7 +9,10 @@ Zero-shot results on pre-October-2025 origins may be contaminated by pretraining
 See ``docs/limitations.md``.
 """
 
-from forecast_bench.models.foundation._pipeline import ChronosZeroShot
+from forecast_bench.models.foundation._pipeline import (
+    ChronosFineTuned,
+    ChronosZeroShot,
+)
 
 #: Hugging Face checkpoint for the base model.
 CHRONOS2_MODEL_ID = "amazon/chronos-2"
@@ -29,3 +32,21 @@ class Chronos2ZeroShot(ChronosZeroShot):
 
     model_id = "Chronos2-ZeroShot"
     hf_model_id = CHRONOS2_MODEL_ID
+
+
+class Chronos2FineTuned(ChronosFineTuned):
+    """Chronos-2 with a LoRA adapter fitted on this study's own data.
+
+    The study's headline learned model. Its comparison against
+    :class:`Chronos2ZeroShot` is the one quantity that pretraining contamination cannot
+    confound, because both share the same base weights and differ only in the adaptation
+    fitted on our data with our cutoffs.
+
+    Attributes:
+        model_id: ``"Chronos2-FineTuned"``.
+        finetune_kind: ``"chronos2"``, the model axis of the revision tag.
+    """
+
+    model_id = "Chronos2-FineTuned"
+    hf_model_id = CHRONOS2_MODEL_ID
+    finetune_kind = "chronos2"

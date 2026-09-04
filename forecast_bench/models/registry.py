@@ -21,8 +21,14 @@ from forecast_bench.models.classical.ar1 import AR1
 from forecast_bench.models.classical.arima import ARIMA
 from forecast_bench.models.classical.har import HAR, LogHAR
 from forecast_bench.models.classical.sarimax import SARIMAX
-from forecast_bench.models.foundation.chronos2 import Chronos2ZeroShot
-from forecast_bench.models.foundation.chronos_bolt import ChronosBoltZeroShot
+from forecast_bench.models.foundation.chronos2 import (
+    Chronos2FineTuned,
+    Chronos2ZeroShot,
+)
+from forecast_bench.models.foundation.chronos_bolt import (
+    ChronosBoltFineTuned,
+    ChronosBoltZeroShot,
+)
 from forecast_bench.models.naive import RandomWalk, SeasonalNaive
 from forecast_bench.models.neural.deepar import DeepAR
 from forecast_bench.models.neural.nbeats import NBEATS
@@ -59,6 +65,24 @@ _FOUNDATION_ZERO_SHOT = {
 }
 
 
+#: Fine-tuned foundation models, registered per series according to which adapters were
+#: actually trained.
+#:
+#: Chronos-2 was fine-tuned on both targets; Chronos-Bolt only on the volatility track, per
+#: DECISIONS.md D13, which makes Chronos-2 the core model and Bolt a secondary
+#: generational comparison. Registering a model whose adapters do not exist would fail
+#: mid-run at whichever block first went looking for one, so the panel states what is real.
+_FINETUNED: dict[str, dict[str, type]] = {
+    "spy_logrv": {
+        "Chronos2-FineTuned": Chronos2FineTuned,
+        "ChronosBolt-FineTuned": ChronosBoltFineTuned,
+    },
+    "dgs10": {
+        "Chronos2-FineTuned": Chronos2FineTuned,
+    },
+}
+
+
 #: From-scratch neural baselines, registered for every series.
 #:
 #: Kept in their own group because they are the only models that need GPU training, so a
@@ -75,6 +99,7 @@ def classical_panel(
     target_column: str | None = None,
     include_foundation: bool = False,
     include_neural: bool = False,
+    include_finetuned: bool = False,
 ) -> dict[str, Callable[[], Forecaster]]:
     """Build the naive and classical panel for one series and arm.
 
@@ -84,6 +109,8 @@ def classical_panel(
         target_column: Column holding the target. Defaults to ``series``.
         include_foundation: Add the zero-shot foundation models to the panel.
         include_neural: Add the from-scratch neural baselines, which need GPU training.
+        include_finetuned: Add the LoRA-adapted foundation models. Requires that the
+            adapters already exist on the Hub for every block of this series.
 
     Returns:
         Mapping of model id to a zero-argument builder. A builder is called afresh on every
@@ -109,24 +136,43 @@ def classical_panel(
         registered = {**registered, **_FOUNDATION_ZERO_SHOT}
     if include_neural:
         registered = {**registered, **_NEURAL}
+    if include_finetuned:
+        registered = {**registered, **_FINETUNED.get(series, {})}
 
     return {
-        model_id: _builder(model_class, column)
+        model_id: _builder(model_class, column, series, arm)
         for model_id, model_class in registered.items()
     }
 
 
-def _builder(model_class: type, target_column: str) -> Callable[[], Forecaster]:
+def _builder(
+    model_class: type, target_column: str, series: str, arm: str
+) -> Callable[[], Forecaster]:
     """Return a zero-argument builder for a model class.
 
     Args:
         model_class: The class to construct.
         target_column: Column holding the target.
+        series: Series name, passed to models that need it to resolve an adapter.
+        arm: Experiment arm, passed on the same basis.
 
     Returns:
         A callable producing a fresh, unfitted instance.
+
+    Note:
+        Arguments are passed only where the constructor accepts them, so adding a model
+        that needs more context does not force every other model to grow parameters it
+        has no use for.
     """
-    return lambda: model_class(target_column=target_column)
+    import inspect
+
+    accepted = inspect.signature(model_class.__init__).parameters
+    kwargs: dict[str, object] = {"target_column": target_column}
+    if "series" in accepted:
+        kwargs["series"] = series
+    if "arm" in accepted:
+        kwargs["arm"] = arm
+    return lambda: model_class(**kwargs)
 
 
 def all_registered_model_classes() -> dict[str, type]:
@@ -142,7 +188,23 @@ def all_registered_model_classes() -> dict[str, type]:
     combined.update(_ARM_B_ONLY)
     combined.update(_FOUNDATION_ZERO_SHOT)
     combined.update(_NEURAL)
+    for finetuned in _FINETUNED.values():
+        combined.update(finetuned)
     return combined
+
+
+def finetuned_model_ids(series: str | None = None) -> list[str]:
+    """Fine-tuned model ids, for one series or across all of them.
+
+    Args:
+        series: Restrict to a series, or ``None`` for the union.
+
+    Returns:
+        Model ids, sorted.
+    """
+    if series is not None:
+        return sorted(_FINETUNED.get(series, {}))
+    return sorted({model_id for m in _FINETUNED.values() for model_id in m})
 
 
 def neural_model_ids() -> list[str]:

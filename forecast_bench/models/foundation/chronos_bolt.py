@@ -15,7 +15,10 @@ import warnings
 
 import numpy as np
 
-from forecast_bench.models.foundation._pipeline import ChronosZeroShot
+from forecast_bench.models.foundation._pipeline import (
+    ChronosFineTuned,
+    ChronosZeroShot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,3 +91,42 @@ class ChronosBoltZeroShot(ChronosZeroShot):
                 BOLT_TRAINED_QUANTILES,
             )
         return paths
+
+
+class ChronosBoltFineTuned(ChronosFineTuned):
+    """Chronos-Bolt-small with a LoRA adapter fitted on this study's own data.
+
+    Attributes:
+        model_id: ``"ChronosBolt-FineTuned"``.
+        finetune_kind: ``"bolt"``, the model axis of the revision tag.
+
+    Note:
+        The tail-quantile limitation of the base checkpoint applies here unchanged: LoRA
+        adapts the attention projections, not the quantile head, so this model still
+        cannot produce levels outside 0.1-0.9 and its 95% interval still equals its 80%.
+    """
+
+    model_id = "ChronosBolt-FineTuned"
+    hf_model_id = CHRONOS_BOLT_MODEL_ID
+    finetune_kind = "bolt"
+
+    def _prepare_base_model(self, model):
+        """Give the base model the embedding accessors peft requires before loading.
+
+        Args:
+            model: The freshly loaded ``ChronosBoltModelForForecasting``.
+
+        Returns:
+            The model with ``get_input_embeddings``/``set_input_embeddings`` bound.
+
+        Note:
+            Needed when *loading* an adapter as well as when creating one:
+            ``PeftModel.from_pretrained`` prepares the model the same way
+            ``get_peft_model`` does, and raises the same ``NotImplementedError`` without
+            this.
+        """
+        from forecast_bench.models.foundation.finetune import (
+            _with_input_embedding_accessors,
+        )
+
+        return _with_input_embedding_accessors(model)
