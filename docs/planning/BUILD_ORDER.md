@@ -593,7 +593,7 @@ Print exactly this:
 
 ---
 
-### [ ] Step 20 — README, architecture diagram, docs pass
+### [x] Step 20 — README, architecture diagram, docs pass
 
 **Create/finish:** `README.md` in the GraphBench format — badges, one-line description,
 the plain-language explanation from `IMPLEMENTATION_PLAN.md` §0, how it works, results
