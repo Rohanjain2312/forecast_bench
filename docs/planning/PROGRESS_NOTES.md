@@ -864,3 +864,72 @@ fail mid-run at whichever block first went looking.
 *load* adapters, not only to train them, so the local benchmark depends on it.
 
 Full panel now: **11 models on `spy_logrv`**, 9 on `dgs10`.
+
+## Steps 17-18 — Full benchmark and the pre-registered verdict (2026-09-04)
+
+Headline: Arm A, matched cadence, **11 models on `spy_logrv`, 9 on `dgs10`**, 137 and 136
+origins. Locally-computed models merged with the GPU-trained neural forecasts pulled from
+the Hub.
+
+### The verdict: the fine-tuned foundation model LOST
+
+Both clauses of `PREREGISTRATION.md` §3 trigger independently.
+
+**(a) Beat the random walk on WQL skill at h=1 on both series** —
+`spy_logrv` **+0.1527 PASS**, `dgs10` **-0.0016 FAIL**.
+
+**(b) Diebold-Mariano significance against the best classical model at any horizon** — six
+tests, p from 0.227 to 0.927, **every one favouring the classical model**. No significant
+win anywhere.
+
+| SPY log-RV, WQL skill | h=1 | h=5 | h=21 |
+|---|---|---|---|
+| DeepAR-LSTM | **+0.169** | **+0.230** | +0.207 |
+| LogHAR | +0.166 | +0.219 | **+0.212** |
+| ARIMA | +0.168 | +0.210 | +0.205 |
+| Chronos2-FineTuned | +0.153 | +0.205 | +0.193 |
+| Chronos2-ZeroShot | +0.151 | +0.187 | +0.184 |
+
+### Registered predictions: four of five held
+
+1. **HELD** — on `DGS10` nothing beats the random walk meaningfully; best is Chronos-2
+   zero-shot at +0.008.
+2. **HELD** — LogHAR beats zero-shot Chronos-2 at h=1 and h=5.
+3. **HELD** — fine-tuning improves on zero-shot at every horizon and closes none of the gap
+   to LogHAR.
+4. **FAILED** — the gap to the best classical model was predicted to *narrow* with horizon.
+   It widened: 0.013 at h=1 to 0.019 at h=21.
+5. **HELD, and decisively** — see below.
+
+### The finding that points the other way
+
+Sample efficiency at h=1, WQL skill, fraction of full-window skill retained on one year of
+data:
+
+| Model | 1y | full | retained |
+|---|---|---|---|
+| Chronos2-FineTuned | **+0.130** | +0.153 | **85%** |
+| N-BEATS | -0.539 | +0.058 | worse than useless |
+| DeepAR-LSTM | -5.160 | +0.169 | worse than useless |
+
+The fine-tuned foundation model is at 85% of its ceiling with one year of data, while both
+from-scratch neural models are *far worse than a random walk* at that size. This is the
+single most transferable result in the project and it contradicts the headline verdict's
+direction — which is exactly why both are reported.
+
+### The Model Confidence Set changes the reading
+
+Chronos2-FineTuned survives in the MCS at **every series and horizon**. It lost the
+pre-registered comparison and it is simultaneously not *demonstrably worse* than the models
+that beat it. At 137 origins most of this panel is statistically indistinguishable, which is
+precisely why D7 required an MCS alongside the pairwise tests.
+
+### Two bugs found by running the evaluation
+
+`run_series_backtest` accepted `include_finetuned` and never passed it to the panel, so the
+first headline run produced 9 models instead of 11 **and reported success**. A flag that is
+accepted and ignored is worse than one that does not exist; now pinned by a test.
+
+The sweep needed a `--models` filter: Chronos-Bolt was only fine-tuned at the full window,
+so its `1y`/`3y`/`10y` adapters do not exist. That failed loudly naming the exact missing
+revision, which is the designed behaviour.
