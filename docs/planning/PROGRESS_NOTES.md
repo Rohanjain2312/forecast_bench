@@ -815,3 +815,14 @@ runtime now costs at most the stage in flight.
 paths, so where output lands depends on the working directory, and every log line reported
 that relative path. `write_results` and `ensure_dirs` now log resolved absolute paths, which
 turns "the file is not there" from a hunt into a one-line answer.
+
+**Confirmed: the runtime was recycled.** The diagnostic returned `forecasts_dir` not
+existing at all — `ensure_dirs()` runs at the top of Step 4, so its absence proves that cell
+never executed in that kernel — plus no parquets anywhere under `/content` and both result
+variables gone. Steps 4 and 5 were lost and re-run.
+
+With per-stage pushing now in place, the remaining gap was the *reverse* direction: Step 6's
+reuse of the Step 4 result read only from local disk, which is precisely what a recycle
+destroys. It now looks in three places in order of cost — memory, this VM's disk, then the
+Hub via `data.hub.load_forecast_file()` — so a completed stage is recovered rather than
+recomputed no matter which kernel or VM asks for it.

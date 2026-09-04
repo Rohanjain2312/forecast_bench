@@ -196,6 +196,34 @@ def push_forecasts(
     return uploaded
 
 
+def load_forecast_file(filename: str, repo_id: str | None = None) -> pd.DataFrame:
+    """Read one published forecast parquet back from the Hub.
+
+    Args:
+        filename: Path within the repo's ``forecasts/`` directory, e.g.
+            ``"spy_logrv_armA_block_ys.parquet"``.
+        repo_id: Source dataset repo. Defaults to the configured one.
+
+    Returns:
+        The tidy forecast frame.
+
+    Note:
+        This is what makes a long Colab notebook resumable across a recycled runtime.
+        Local results live on ephemeral disk; the Hub copy is the durable one, so a stage
+        that has already completed can be recovered rather than recomputed.
+    """
+    from huggingface_hub import hf_hub_download
+
+    config = get_config()
+    path = hf_hub_download(
+        repo_id=repo_id or config.hf_dataset_repo,
+        filename=f"forecasts/{filename}",
+        repo_type="dataset",
+    )
+    logger.info("Loaded %s from the Hub", filename)
+    return pd.read_parquet(path)
+
+
 def load_processed(name: str, repo_id: str | None = None) -> pd.DataFrame:
     """Read a processed series from the Hub.
 
