@@ -30,6 +30,30 @@ SERIES_LABELS = {
 }
 
 
+def annualised_vol_ticks(low: float, high: float) -> tuple[list[float], list[str]]:
+    """Y-axis ticks for log realized variance, annotated with what they mean.
+
+    Args:
+        low: Lowest value on the axis.
+        high: Highest value on the axis.
+
+    Returns:
+        A ``(positions, labels)`` pair.
+
+    Note:
+        "log variance = -11" means nothing to a first-time reader; "about 7% a year" does.
+        Converting via ``sqrt(exp(v)) * sqrt(252)`` puts a familiar number beside the one
+        the models actually forecast, without changing the scale being plotted.
+    """
+    positions = [v for v in range(int(np.floor(low)), int(np.ceil(high)) + 1)]
+    labels = [
+        f"{v}<br><span style='font-size:0.8em;color:#777'>"
+        f"≈{np.sqrt(np.exp(v)) * np.sqrt(252) * 100:.0f}% a year</span>"
+        for v in positions
+    ]
+    return positions, labels
+
+
 def fan_chart(
     history: pd.Series,
     quantiles: dict[float, np.ndarray],
@@ -37,7 +61,8 @@ def fan_chart(
     series: str = "spy_logrv",
     model_name: str = "Model",
     actuals: pd.Series | None = None,
-    history_days: int = 120,
+    history_days: int = 63,
+    smooth_window: int = 5,
 ) -> Any:
     """Draw a forecast fan over recent history.
 
@@ -48,49 +73,80 @@ def fan_chart(
         series: Series name, used for axis labels.
         model_name: Name shown in the title.
         actuals: What actually happened, drawn dashed when available.
-        history_days: How much history to show before the origin.
+        history_days: How much history to show. Three times the horizon by default, so
+            the forecast occupies about a quarter of the width rather than a sliver.
+        smooth_window: Trading days in the readability average. Zero disables it.
 
     Returns:
         A Plotly figure.
 
     Note:
-        The bands are the model's own quantiles, not a normal approximation. A wide fan is
-        a model saying it does not know — which is information, and the reason coverage
-        and width are always reported as a pair rather than coverage alone.
+        Three deliberate choices, all about a first-time reader:
+
+        The forecast region is **shaded**, so the eye finds the prediction before reading
+        the legend. Daily realized variance is extremely spiky, so the raw series is drawn
+        faint and a short moving average is drawn over it — the average is a *reading aid*
+        and is labelled as one; the models forecast the raw series, not the smoothed one.
+        And the bands are the model's own quantiles, never a normal approximation: a wide
+        fan is a model saying it does not know, which is information.
     """
     import plotly.graph_objects as go
 
     recent = history.iloc[-history_days:]
     figure = go.Figure()
 
+    # Shade the forecast region first so everything else draws on top of it.
+    figure.add_vrect(
+        x0=recent.index[-1],
+        x1=forecast_index[-1],
+        fillcolor="#1f77b4",
+        opacity=0.06,
+        line_width=0,
+        layer="below",
+        annotation_text="  forecast",
+        annotation_position="top left",
+        annotation={"font": {"size": 13, "color": "#1f77b4"}},
+    )
+
     for low, high, label in FAN_BANDS:
         if low not in quantiles or high not in quantiles:
             continue
+        wide = label.startswith("95")
         figure.add_trace(
             go.Scatter(
                 x=list(forecast_index) + list(forecast_index[::-1]),
                 y=list(quantiles[high]) + list(quantiles[low][::-1]),
                 fill="toself",
-                fillcolor=(
-                    "rgba(31,119,180,0.30)"
-                    if label.startswith("80")
-                    else "rgba(31,119,180,0.15)"
-                ),
+                fillcolor="rgba(31,119,180,0.14)" if wide else "rgba(31,119,180,0.30)",
                 line={"color": "rgba(0,0,0,0)"},
-                name=label,
+                name=f"{label} the model expects",
                 hoverinfo="skip",
             )
         )
 
+    # Raw history, kept faint: it is the truth, but it is too noisy to read directly.
     figure.add_trace(
         go.Scatter(
             x=recent.index,
             y=recent.to_numpy(),
             mode="lines",
-            name="What actually happened (past)",
-            line={"color": "#333333", "width": 2},
+            name="Actual, day by day",
+            line={"color": "#9aa5b1", "width": 1},
+            opacity=0.75,
         )
     )
+
+    if smooth_window > 1 and len(recent) > smooth_window:
+        smoothed = recent.rolling(smooth_window, min_periods=1).mean()
+        figure.add_trace(
+            go.Scatter(
+                x=smoothed.index,
+                y=smoothed.to_numpy(),
+                mode="lines",
+                name=f"Actual, {smooth_window}-day average",
+                line={"color": "#1a1a1a", "width": 2.5},
+            )
+        )
 
     if 0.5 in quantiles:
         figure.add_trace(
@@ -98,8 +154,8 @@ def fan_chart(
                 x=forecast_index,
                 y=quantiles[0.5],
                 mode="lines",
-                name=f"{model_name} best guess",
-                line={"color": "#1f77b4", "width": 3},
+                name=f"{model_name} forecast",
+                line={"color": "#1f77b4", "width": 3.5},
             )
         )
 
@@ -108,29 +164,35 @@ def fan_chart(
             go.Scatter(
                 x=actuals.index,
                 y=actuals.to_numpy(),
-                mode="lines",
-                name="What actually happened (after)",
-                line={"color": "#d62728", "width": 2, "dash": "dash"},
+                mode="lines+markers",
+                name="What actually happened",
+                line={"color": "#d62728", "width": 2, "dash": "dot"},
+                marker={"size": 4},
             )
         )
 
-    figure.add_vline(
-        x=recent.index[-1],
-        line_dash="dot",
-        line_color="#888888",
-        annotation_text="forecast starts here",
-        annotation_position="top left",
-    )
+    figure.add_vline(x=recent.index[-1], line_dash="dot", line_color="#555555")
+
+    axis = {"title": AXIS_LABELS.get(series, series)}
+    if series == "spy_logrv":
+        values = list(recent.to_numpy())
+        for path in quantiles.values():
+            values.extend(path)
+        positions, labels = annualised_vol_ticks(min(values), max(values))
+        axis.update(tickmode="array", tickvals=positions, ticktext=labels)
 
     figure.update_layout(
-        title=f"{model_name} — {SERIES_LABELS.get(series, series)}",
+        title={
+            "text": f"{model_name} — {SERIES_LABELS.get(series, series)}",
+            "font": {"size": 18},
+        },
         xaxis_title="Date",
-        yaxis_title=AXIS_LABELS.get(series, series),
+        yaxis=axis,
         hovermode="x unified",
         template="plotly_white",
-        height=460,
-        legend={"orientation": "h", "y": -0.2},
-        margin={"l": 60, "r": 30, "t": 60, "b": 60},
+        height=520,
+        legend={"orientation": "h", "y": -0.18, "font": {"size": 12}},
+        margin={"l": 90, "r": 30, "t": 70, "b": 90},
     )
     return figure
 
@@ -141,7 +203,7 @@ def comparison_chart(
     forecast_index: pd.DatetimeIndex,
     series: str = "spy_logrv",
     actuals: pd.Series | None = None,
-    history_days: int = 120,
+    history_days: int = 63,
 ) -> Any:
     """Draw several models' median forecasts on one axis.
 
@@ -164,13 +226,35 @@ def comparison_chart(
 
     recent = history.iloc[-history_days:]
     figure = go.Figure()
+    figure.add_vrect(
+        x0=recent.index[-1],
+        x1=forecast_index[-1],
+        fillcolor="#1f77b4",
+        opacity=0.06,
+        line_width=0,
+        layer="below",
+        annotation_text="  forecast",
+        annotation_position="top left",
+        annotation={"font": {"size": 13, "color": "#1f77b4"}},
+    )
     figure.add_trace(
         go.Scatter(
             x=recent.index,
             y=recent.to_numpy(),
             mode="lines",
-            name="What actually happened (past)",
-            line={"color": "#333333", "width": 2},
+            name="Actual, day by day",
+            line={"color": "#9aa5b1", "width": 1},
+            opacity=0.75,
+        )
+    )
+    smoothed = recent.rolling(5, min_periods=1).mean()
+    figure.add_trace(
+        go.Scatter(
+            x=smoothed.index,
+            y=smoothed.to_numpy(),
+            mode="lines",
+            name="Actual, 5-day average",
+            line={"color": "#1a1a1a", "width": 2.5},
         )
     )
 
@@ -199,15 +283,28 @@ def comparison_chart(
             )
         )
 
-    figure.add_vline(x=recent.index[-1], line_dash="dot", line_color="#888888")
+    figure.add_vline(x=recent.index[-1], line_dash="dot", line_color="#555555")
+
+    axis = {"title": AXIS_LABELS.get(series, series)}
+    if series == "spy_logrv":
+        values = list(recent.to_numpy())
+        for quantiles in forecasts.values():
+            if 0.5 in quantiles:
+                values.extend(quantiles[0.5])
+        positions, labels = annualised_vol_ticks(min(values), max(values))
+        axis.update(tickmode="array", tickvals=positions, ticktext=labels)
+
     figure.update_layout(
-        title=f"Model comparison — {SERIES_LABELS.get(series, series)}",
+        title={
+            "text": f"All models compared — {SERIES_LABELS.get(series, series)}",
+            "font": {"size": 18},
+        },
         xaxis_title="Date",
-        yaxis_title=AXIS_LABELS.get(series, series),
+        yaxis=axis,
         hovermode="x unified",
         template="plotly_white",
-        height=460,
-        legend={"orientation": "h", "y": -0.2},
-        margin={"l": 60, "r": 30, "t": 60, "b": 60},
+        height=520,
+        legend={"orientation": "h", "y": -0.18, "font": {"size": 12}},
+        margin={"l": 90, "r": 30, "t": 70, "b": 90},
     )
     return figure

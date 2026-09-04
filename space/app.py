@@ -29,7 +29,7 @@ from model_cards import (
 )
 
 from forecast_bench.config import CONTEXT_LENGTH, MAX_HORIZON, setup_logging
-from forecast_bench.viz.forecast_plots import SERIES_LABELS, comparison_chart, fan_chart
+from forecast_bench.viz.forecast_plots import comparison_chart, fan_chart
 from forecast_bench.viz.results_plots import (
     coverage_width_scatter,
     regime_heatmap,
@@ -46,6 +46,22 @@ REPO_URL = "https://github.com/Rohanjain2312/forecast_bench"
 
 #: Models offered for live forecasting. Kept small so the landing tab stays fast.
 LIVE_MODELS = ["Chronos-2 (adapted)", "Chronos-2 (untouched)", "ARIMA", "Random walk"]
+
+#: Dates worth looking at, so a first-time visitor does not have to invent one.
+#:
+#: A blank date box asks the reader to know which dates are interesting before they know
+#: what the tool does. These are the moments where the forecasts are actually worth
+#: comparing, including the two crisis case studies from DECISIONS.md D8.
+PRESET_MOMENTS = [
+    ("Calm market (2017)", "2017-06-28"),
+    ("Just before COVID (Feb 2020)", "2020-02-14"),
+    ("Mid-COVID crash (Mar 2020)", "2020-03-20"),
+    ("Rate shock (2022)", "2022-06-15"),
+    ("Recent (2024)", "2024-06-28"),
+]
+
+#: Earliest origin with a full context window behind it, and the latest usable one.
+DATE_RANGE = ("2002-01-02", "2026-05-01")
 
 _CACHE: dict[str, object] = {}
 
@@ -79,6 +95,33 @@ def results(name: str) -> pd.DataFrame:
 def series_data(series: str) -> pd.DataFrame:
     """Load a processed series from the dataset repo."""
     return _hub_parquet(f"processed/{series}.parquet")
+
+
+def resolve_origin(series_frame: pd.Series, date_value: Any) -> pd.Timestamp | None:
+    """Snap a user-supplied date to the last trading day with enough history behind it.
+
+    Args:
+        series_frame: The target series.
+        date_value: Whatever the date control produced — a string with or without a time,
+            a datetime, or a timestamp.
+
+    Returns:
+        A usable forecast origin, or ``None`` if there is not enough history before it.
+
+    Note:
+        The control is a calendar, so it happily offers weekends, holidays, and dates too
+        early to fill a 512-day context window. Snapping backwards to the nearest usable
+        trading day means every date a visitor can pick produces a forecast, rather than an
+        error message asking them to guess a better one.
+    """
+    try:
+        origin = pd.to_datetime(date_value).normalize()
+    except (ValueError, TypeError):
+        return None
+    available = series_frame.index[series_frame.index <= origin]
+    if len(available) < CONTEXT_LENGTH:
+        return None
+    return available[-1]
 
 
 def _forecast_one(model_label: str, history: pd.Series, series: str, origin) -> dict:
@@ -133,14 +176,13 @@ def run_forecast(series: str, date_text: str, model_label: str) -> tuple[Any, st
     try:
         frame = series_data(series)
         target = frame[series].dropna()
-        origin = pd.Timestamp(date_text)
-        available = target.index[target.index <= origin]
-        if len(available) < CONTEXT_LENGTH:
+        origin = resolve_origin(target, date_text)
+        if origin is None:
             return None, (
-                f"Not enough history before {origin.date()}. "
-                f"Pick a date after {target.index[CONTEXT_LENGTH].date()}."
+                "Not enough history before that date — pick one after "
+                f"**{target.index[CONTEXT_LENGTH].date()}**. Every model needs 512 "
+                "trading days of context."
             )
-        origin = available[-1]
         history = target.loc[:origin]
 
         quantiles, index = _forecast_one(model_label, history, series, origin)
@@ -154,11 +196,21 @@ def run_forecast(series: str, date_text: str, model_label: str) -> tuple[Any, st
             model_name=model_label,
             actuals=actuals if not actuals.empty else None,
         )
+        verdict = ""
+        if not actuals.empty and 0.1 in quantiles and 0.9 in quantiles:
+            inside = (
+                (actuals.to_numpy() >= quantiles[0.1][: len(actuals)])
+                & (actuals.to_numpy() <= quantiles[0.9][: len(actuals)])
+            ).mean()
+            verdict = (
+                f" Reality stayed inside the dark band **{inside:.0%}** of the time here "
+                "— for a well-calibrated model that should be around 80%."
+            )
         caption = (
-            f"**{model_label}** forecasting {SERIES_LABELS.get(series, series)} for the 21 "
-            f"trading days after **{origin.date()}**. The shaded bands are the model's own "
-            "uncertainty: the dark band is where it thinks the value lands 80% of the time. "
-            "The red dashed line is what actually happened."
+            f"**{model_label}** forecasting the 21 trading days after **{origin.date()}**. "
+            "The blue line is its single best guess; the shaded bands are how confident it "
+            "is. The red dotted line is what actually happened, which the model could not "
+            f"see.{verdict}"
         )
         return figure, caption
     except Exception as error:  # noqa: BLE001 - surface the problem, never a blank page
@@ -179,11 +231,9 @@ def run_comparison(series: str, date_text: str) -> tuple[Any, str]:
     try:
         frame = series_data(series)
         target = frame[series].dropna()
-        origin = pd.Timestamp(date_text)
-        available = target.index[target.index <= origin]
-        if len(available) < CONTEXT_LENGTH:
+        origin = resolve_origin(target, date_text)
+        if origin is None:
             return None, "Not enough history before that date."
-        origin = available[-1]
         history = target.loc[:origin]
 
         forecasts, index = {}, None
@@ -255,10 +305,18 @@ def build_app() -> gr.Blocks:
 
         with gr.Tab("1. Try a forecast"):
             gr.Markdown(
-                "Pick a date. Each model sees only what was known *on that date* and "
-                "forecasts the next 21 trading days. The red dashed line is what actually "
-                "happened, so you can judge for yourself."
+                "### Pick a moment in market history and see what each model predicted\n\n"
+                "Each model sees **only what was known on that date** — nothing after it — "
+                "and forecasts the next 21 trading days (about a month). The red dotted "
+                "line shows what actually happened, so you can judge the forecast yourself."
             )
+            gr.Markdown("**Jump to an interesting moment**")
+            with gr.Row():
+                preset_buttons = [
+                    (gr.Button(label, size="sm"), value)
+                    for label, value in PRESET_MOMENTS
+                ]
+
             with gr.Row():
                 series_pick = gr.Dropdown(
                     choices=[
@@ -268,19 +326,31 @@ def build_app() -> gr.Blocks:
                     value=default_series,
                     label="What to forecast",
                 )
-                date_pick = gr.Textbox(
-                    value=default_date, label="Forecast from this date (YYYY-MM-DD)"
+                date_pick = gr.DateTime(
+                    value=default_date,
+                    include_time=False,
+                    type="string",
+                    label="Forecast from this date",
+                    info="Any trading day between 2002 and mid-2026",
                 )
                 model_pick = gr.Dropdown(
-                    choices=LIVE_MODELS, value=LIVE_MODELS[0], label="Model"
+                    choices=LIVE_MODELS,
+                    value=LIVE_MODELS[0],
+                    label="Model",
+                    info="Adapted = fine-tuned on this data",
                 )
-            run_button = gr.Button("Forecast", variant="primary")
+            run_button = gr.Button("Forecast", variant="primary", size="lg")
             plot = gr.Plot()
             caption = gr.Markdown()
             gr.Markdown("---\n### Or compare all four models at once")
             compare_button = gr.Button("Compare models")
             compare_plot = gr.Plot()
             compare_caption = gr.Markdown()
+
+            for button, moment in preset_buttons:
+                button.click(lambda m=moment: m, None, date_pick).then(
+                    run_forecast, [series_pick, date_pick, model_pick], [plot, caption]
+                )
 
             run_button.click(
                 run_forecast, [series_pick, date_pick, model_pick], [plot, caption]
