@@ -130,6 +130,16 @@ def main() -> int:
         default="all",
         help="Which artifacts to publish.",
     )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Force a full Space rebuild so it reinstalls the package from GitHub.",
+    )
+    parser.add_argument(
+        "--skip-github-check",
+        action="store_true",
+        help="Deploy even if GitHub is behind. Almost always the wrong thing to do.",
+    )
     args = parser.parse_args()
     setup_logging()
 
