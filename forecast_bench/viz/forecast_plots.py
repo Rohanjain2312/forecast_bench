@@ -84,11 +84,17 @@ def fan_chart(
         Three deliberate choices, all about a first-time reader:
 
         The forecast region is **shaded**, so the eye finds the prediction before reading
-        the legend. Daily realized variance is extremely spiky, so the raw series is drawn
-        faint and a short moving average is drawn over it — the average is a *reading aid*
-        and is labelled as one; the models forecast the raw series, not the smoothed one.
-        And the bands are the model's own quantiles, never a normal approximation: a wide
-        fan is a model saying it does not know, which is information.
+        the legend.
+
+        History is drawn as a moving average because daily realized variance is too spiky
+        to read and nothing is being judged against it — it is orientation. The realised
+        outcome inside the forecast window is drawn **raw**, deliberately. The bands are
+        intervals for the *daily* value, so smoothing the outcome would shrink its variance
+        and make every model look better calibrated than it is. The legend names which is
+        which.
+
+        The bands are the model's own quantiles, never a normal approximation: a wide fan
+        is a model saying it does not know, which is information.
     """
     import plotly.graph_objects as go
 
@@ -124,29 +130,23 @@ def fan_chart(
             )
         )
 
-    # Raw history, kept faint: it is the truth, but it is too noisy to read directly.
+    # History is context, so it is drawn smoothed: the raw daily series is too spiky to
+    # read and nothing is being judged against it. The forecast window is different --
+    # see the note on `actuals` below.
+    if smooth_window > 1 and len(recent) > smooth_window:
+        line = recent.rolling(smooth_window, min_periods=1).mean()
+        history_label = f"Past ({smooth_window}-day average)"
+    else:
+        line, history_label = recent, "Past"
     figure.add_trace(
         go.Scatter(
-            x=recent.index,
-            y=recent.to_numpy(),
+            x=line.index,
+            y=line.to_numpy(),
             mode="lines",
-            name="Actual, day by day",
-            line={"color": "#9aa5b1", "width": 1},
-            opacity=0.75,
+            name=history_label,
+            line={"color": "#1a1a1a", "width": 2.5},
         )
     )
-
-    if smooth_window > 1 and len(recent) > smooth_window:
-        smoothed = recent.rolling(smooth_window, min_periods=1).mean()
-        figure.add_trace(
-            go.Scatter(
-                x=smoothed.index,
-                y=smoothed.to_numpy(),
-                mode="lines",
-                name=f"Actual, {smooth_window}-day average",
-                line={"color": "#1a1a1a", "width": 2.5},
-            )
-        )
 
     if 0.5 in quantiles:
         figure.add_trace(
@@ -165,7 +165,7 @@ def fan_chart(
                 x=actuals.index,
                 y=actuals.to_numpy(),
                 mode="lines+markers",
-                name="What actually happened",
+                name="What actually happened (daily)",
                 line={"color": "#d62728", "width": 2, "dash": "dot"},
                 marker={"size": 4},
             )
@@ -237,23 +237,15 @@ def comparison_chart(
         annotation_position="top left",
         annotation={"font": {"size": 13, "color": "#1f77b4"}},
     )
-    figure.add_trace(
-        go.Scatter(
-            x=recent.index,
-            y=recent.to_numpy(),
-            mode="lines",
-            name="Actual, day by day",
-            line={"color": "#9aa5b1", "width": 1},
-            opacity=0.75,
-        )
-    )
+    # One history line only. With four model forecasts already on the axis, a raw daily
+    # series alongside a smoothed one made seven traces competing for the same space.
     smoothed = recent.rolling(5, min_periods=1).mean()
     figure.add_trace(
         go.Scatter(
             x=smoothed.index,
             y=smoothed.to_numpy(),
             mode="lines",
-            name="Actual, 5-day average",
+            name="Past (5-day average)",
             line={"color": "#1a1a1a", "width": 2.5},
         )
     )
@@ -278,7 +270,7 @@ def comparison_chart(
                 x=actuals.index,
                 y=actuals.to_numpy(),
                 mode="lines",
-                name="What actually happened (after)",
+                name="What actually happened (daily)",
                 line={"color": "#d62728", "width": 2.5, "dash": "dash"},
             )
         )

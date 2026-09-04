@@ -210,7 +210,11 @@ def run_forecast(series: str, date_text: str, model_label: str) -> tuple[Any, st
             f"**{model_label}** forecasting the 21 trading days after **{origin.date()}**. "
             "The blue line is its single best guess; the shaded bands are how confident it "
             "is. The red dotted line is what actually happened, which the model could not "
-            f"see.{verdict}"
+            f"see.{verdict}\n\n"
+            "*The black history line is a 5-day average — daily volatility is too jagged to "
+            "read otherwise. The red outcome line is left unsmoothed on purpose: the bands "
+            "are intervals for the daily value, so smoothing it would make every model look "
+            "better calibrated than it is.*"
         )
         return figure, caption
     except Exception as error:  # noqa: BLE001 - surface the problem, never a blank page
@@ -251,7 +255,8 @@ def run_comparison(series: str, date_text: str) -> tuple[Any, str]:
         )
         return figure, (
             f"All four models forecasting from **{origin.date()}**. Only their central "
-            "guesses are shown — overlaying four uncertainty fans is unreadable."
+            "guesses are shown — overlaying four uncertainty fans is unreadable. Use the "
+            "single-model view above to see how confident any one of them was."
         )
     except Exception as error:  # noqa: BLE001
         logger.exception("Comparison failed")
