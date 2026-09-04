@@ -972,3 +972,40 @@ only on the block, so the two cadences select identical weights.
 Arm B was not run. The covariate-informed foundation models it calls for do not exist —
 `Chronos2ZeroShot` conditions only on the target's own history, and the adapters were
 trained on Arm A alone. Recorded in `docs/limitations.md` §6 rather than quietly relabelled.
+
+## Step 19 — The Space (2026-09-04)
+
+Live at https://huggingface.co/spaces/rohanjain2312/forecastbench-demo — stage `RUNNING`,
+HTTP 200, `cpu-basic`, all five tabs present in the served app config. The warm-up forecast
+runs at boot and the log confirms it, so the first visitor does not pay the ~10 s cold start.
+
+Live inference rather than pre-computed pictures, which the 0.85 s measurement at Step 4
+made viable. Warm forecasts land in about a second; the four-model comparison in two.
+
+### The rule that keeps the demo honest is a test, not a convention
+
+`docs/benchmark_results.md` is generated from the parquets, and the Space reads the same
+published tables. `test_space_app_recomputes_no_metrics` asserts `app.py` imports nothing
+from `evaluation.metrics` at all — so the Space *cannot* display a number the documentation
+does not contain, rather than merely being expected not to.
+
+Two more constraints are enforced the same way: every registered model must have a
+plain-language gloss (`test_every_registered_model_has_a_plain_language_description`), and
+axis titles must be words rather than symbols — the fan-chart test rejects "sigma" in a
+y-axis label.
+
+The headline text is also pinned: it must contain the word "lost", must **not** contain
+"mixed results" — `PREREGISTRATION.md` §3 commits to that exact distinction — and must
+carry the 85% sample-efficiency figure beside it, so the demo cannot state the verdict
+without the evidence pointing the other way.
+
+### The first deploy failed on an ordering mistake
+
+`ModuleNotFoundError: No module named 'forecast_bench.viz.forecast_plots'`. The Space
+installs the package from GitHub, and it was deployed *before* `viz/` had been pushed, so it
+built against an older commit. The error reads like a packaging problem and was nothing of
+the sort.
+
+`push_space` now refuses to run while the working tree is dirty or `HEAD` differs from
+`origin/main`, and `--rebuild` forces a factory reboot so the Space genuinely reinstalls
+instead of restarting on cached layers.
