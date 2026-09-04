@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from forecast_bench.backtest.runner import run_series_backtest
 from forecast_bench.config import MAX_HORIZON, QUANTILE_GRID
 from forecast_bench.models.foundation.chronos2 import (
     Chronos2FineTuned,
@@ -138,3 +139,21 @@ def test_registry_builder_passes_series_to_finetuned_models() -> None:
 
     assert model.series == "dgs10"
     assert model.arm == "A"
+
+
+def test_run_series_backtest_honours_include_finetuned() -> None:
+    """The runner must actually thread the flag through to the panel.
+
+    Regression test: ``include_finetuned`` existed on ``classical_panel`` and on the CLI
+    but was never passed through ``run_series_backtest``, so the flag was silently a
+    no-op — the headline run produced 9 models instead of 11 and reported success. A
+    flag that is accepted and ignored is worse than one that does not exist.
+    """
+    import inspect
+
+    assert "include_finetuned" in inspect.signature(run_series_backtest).parameters
+
+    source = inspect.getsource(run_series_backtest)
+    assert (
+        "include_finetuned=include_finetuned" in source
+    ), "run_series_backtest accepts include_finetuned but does not pass it to the panel"

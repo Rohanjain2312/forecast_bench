@@ -268,6 +268,8 @@ def run_series_backtest(
     horizon: int = MAX_HORIZON,
     include_foundation: bool = False,
     include_neural: bool = False,
+    include_finetuned: bool = False,
+    only_models: list[str] | None = None,
     **model_kwargs,
 ) -> pd.DataFrame:
     """Run one full backtest configuration for a series.
@@ -284,6 +286,11 @@ def run_series_backtest(
         horizon: Steps forecast per fold.
         include_foundation: Add the zero-shot foundation models.
         include_neural: Add the from-scratch neural baselines, which need a GPU.
+        include_finetuned: Add the LoRA-adapted foundation models, which load their
+            per-block adapters from the Hub.
+        only_models: Restrict the panel to these model ids. Used by the
+            sample-efficiency sweep, where only models with an adapter at every
+            window can take part.
         **model_kwargs: Extra keyword arguments passed to every model builder, e.g.
             ``device`` or ``training_window_days`` for the sample-efficiency sweep.
 
@@ -315,7 +322,17 @@ def run_series_backtest(
         target_column=series,
         include_foundation=include_foundation,
         include_neural=include_neural,
+        include_finetuned=include_finetuned,
     )
+    if only_models is not None:
+        missing = set(only_models) - set(panel)
+        if missing:
+            raise KeyError(
+                f"Requested models not in the {series} panel: {sorted(missing)}. "
+                f"Available: {sorted(panel)}"
+            )
+        panel = {k: v for k, v in panel.items() if k in set(only_models)}
+
     if model_kwargs:
         panel = {
             model_id: (lambda b=build, k=model_kwargs: _build_with(b, k))

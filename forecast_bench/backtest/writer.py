@@ -187,3 +187,55 @@ def write_results(frame: pd.DataFrame, directory: Path) -> Path:
     frame.to_parquet(path, index=False)
     logger.info("Wrote %d forecast rows to %s", len(frame), path.resolve())
     return path
+
+
+def merge_forecasts(*frames: pd.DataFrame) -> pd.DataFrame:
+    """Combine forecast frames covering different models of the same configuration.
+
+    Args:
+        *frames: Tidy frames to merge. Empty and ``None`` entries are ignored.
+
+    Returns:
+        One frame in :data:`SCHEMA` order, sorted by origin, model and step.
+
+    Raises:
+        ValueError: If nothing usable was passed, if the frames disagree on
+            ``(series, arm, cadence)``, or if a model appears in more than one frame.
+
+    Note:
+        Needed because the panel is computed in two places. The neural models are trained
+        on Colab and their forecasts come back through the Hub; everything else runs
+        locally. Merging on ``model_id`` rather than concatenating blindly is what stops a
+        model being counted twice — the same duplication that would silently average every
+        metric over doubled rows.
+    """
+    usable = [f for f in frames if f is not None and not f.empty]
+    if not usable:
+        raise ValueError("No non-empty forecast frames to merge")
+
+    for column in ("series", "arm", "cadence"):
+        values = {v for frame in usable for v in frame[column].unique()}
+        if len(values) != 1:
+            raise ValueError(
+                f"Cannot merge frames spanning multiple {column} values: {sorted(values)}"
+            )
+
+    seen: dict[str, int] = {}
+    for position, frame in enumerate(usable):
+        for model_id in frame["model_id"].unique():
+            if model_id in seen:
+                raise ValueError(
+                    f"Model {model_id!r} appears in both frame {seen[model_id]} and "
+                    f"frame {position}. Merging would double-count it."
+                )
+            seen[model_id] = position
+
+    merged = pd.concat(usable, ignore_index=True)[SCHEMA]
+    merged = merged.sort_values(["origin", "model_id", "step", "quantile"])
+    logger.info(
+        "Merged %d models into %d rows: %s",
+        merged["model_id"].nunique(),
+        len(merged),
+        ", ".join(sorted(merged["model_id"].unique())),
+    )
+    return merged.reset_index(drop=True)
