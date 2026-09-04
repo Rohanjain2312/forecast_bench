@@ -35,6 +35,8 @@ matplotlib = ">=3.8"
 plotly = ">=5.22"
 arch = ">=7.0"
 tqdm = ">=4.66"
+# pandas.to_markdown() needs it; the results doc is generated, not hand-written.
+tabulate = ">=0.9"
 wandb = ">=0.17"
 
 [tool.poetry.group.dev.dependencies]
