@@ -24,8 +24,11 @@ class NBEATS(DartsQuantileForecaster):
 
     model_id = "N-BEATS"
 
-    def _build(self):
+    def _build(self, early_stopping: bool = False):
         """Construct the darts N-BEATS estimator.
+
+        Args:
+            early_stopping: Whether to attach the early-stopping callback.
 
         Returns:
             An unfitted ``NBEATSModel`` with a quantile likelihood.
@@ -39,5 +42,5 @@ class NBEATS(DartsQuantileForecaster):
             n_epochs=self.n_epochs,
             likelihood=QuantileRegression(quantiles=list(QUANTILE_GRID)),
             random_state=self.random_state,
-            pl_trainer_kwargs=self._trainer_kwargs(),
+            pl_trainer_kwargs=self._trainer_kwargs(early_stopping),
         )

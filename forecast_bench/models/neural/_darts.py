@@ -97,8 +97,11 @@ class DartsQuantileForecaster(BaseForecaster):
         self._model = None
         self._context: np.ndarray | None = None
 
-    def _build(self):
+    def _build(self, early_stopping: bool = False):
         """Construct the underlying darts model.
+
+        Args:
+            early_stopping: Whether the trainer should attach the early-stopping callback.
 
         Returns:
             An unfitted darts estimator.
@@ -108,18 +111,29 @@ class DartsQuantileForecaster(BaseForecaster):
         """
         raise NotImplementedError
 
-    def _trainer_kwargs(self) -> dict:
+    def _trainer_kwargs(self, early_stopping: bool) -> dict:
         """Lightning trainer settings shared by both neural models.
+
+        Args:
+            early_stopping: Attach the early-stopping callback. Only valid when a
+                validation series is supplied, since it monitors ``val_loss``.
 
         Returns:
             Keyword arguments for darts' ``pl_trainer_kwargs``.
         """
-        return {
+        kwargs: dict = {
             "accelerator": self.device,
             "enable_progress_bar": False,
             "enable_model_summary": False,
             "logger": False,
         }
+        if early_stopping:
+            from pytorch_lightning.callbacks import EarlyStopping
+
+            kwargs["callbacks"] = [
+                EarlyStopping(monitor="val_loss", patience=PATIENCE, mode="min")
+            ]
+        return kwargs
 
     def _estimate_parameters(
         self, train: pd.DataFrame, series: pd.Series, origin: pd.Timestamp
@@ -140,14 +154,40 @@ class DartsQuantileForecaster(BaseForecaster):
         if self.training_window_days is not None:
             values = values[-self.training_window_days :]
 
-        split = max(len(values) - VALIDATION_WINDOWS, self.input_chunk_length + 1)
-        train_values, validation_values = values[:split], values[split:]
+        minimum = self.input_chunk_length + self.output_chunk_length
+        if len(values) < minimum:
+            raise ValueError(
+                f"{self.model_id}: training window has {len(values)} observations, "
+                f"fewer than the {minimum} needed for a single "
+                f"(context={self.input_chunk_length}, horizon="
+                f"{self.output_chunk_length}) sample."
+            )
 
-        self._model = self._build()
-        fit_kwargs = {"series": to_timeseries(train_values)}
-        if len(validation_values) > self.input_chunk_length + self.output_chunk_length:
-            fit_kwargs["val_series"] = to_timeseries(
-                values[split - self.input_chunk_length :]
+        # Reserve validation from the end of the window, but never more than half of
+        # whatever is left over above the one-sample minimum. A fixed 252-observation
+        # reserve is fine on the full window and fatal on a 1-year sweep slice, where it
+        # leaves the training series one observation short of a single sample.
+        surplus = len(values) - minimum
+        reserve = min(VALIDATION_WINDOWS, surplus // 2)
+        split = len(values) - reserve
+
+        # The validation series carries its own context, so its usable length is
+        # reserve + input_chunk_length. Comparing `reserve` alone against the minimum --
+        # as this once did -- is never true for any reserve below 533, which meant
+        # val_series was silently never passed and early stopping never ran at all.
+        validation_series = values[split - self.input_chunk_length :]
+        use_validation = len(validation_series) >= minimum and reserve > 0
+
+        self._model = self._build(early_stopping=use_validation)
+        fit_kwargs = {"series": to_timeseries(values[:split])}
+        if use_validation:
+            fit_kwargs["val_series"] = to_timeseries(validation_series)
+        else:
+            logger.info(
+                "%s: window of %d leaves no room for a validation slice; training "
+                "without early stopping.",
+                self.model_id,
+                len(values),
             )
         self._model.fit(**fit_kwargs)
 

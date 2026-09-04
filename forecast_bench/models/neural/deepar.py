@@ -24,8 +24,11 @@ class DeepAR(DartsQuantileForecaster):
 
     model_id = "DeepAR-LSTM"
 
-    def _build(self):
+    def _build(self, early_stopping: bool = False):
         """Construct the darts LSTM estimator.
+
+        Args:
+            early_stopping: Whether to attach the early-stopping callback.
 
         Returns:
             An unfitted ``RNNModel`` with a quantile likelihood.
@@ -40,5 +43,5 @@ class DeepAR(DartsQuantileForecaster):
             n_epochs=self.n_epochs,
             likelihood=QuantileRegression(quantiles=list(QUANTILE_GRID)),
             random_state=self.random_state,
-            pl_trainer_kwargs=self._trainer_kwargs(),
+            pl_trainer_kwargs=self._trainer_kwargs(early_stopping),
         )

@@ -752,3 +752,45 @@ non-recursive headline glob then excludes by construction; `push_forecasts` swit
 `load_sample_efficiency()`. Verified end to end: the headline loader returns exactly the
 Step 4 row count with the sweep on disk. Pinned by
 `test_sweep_directory_is_excluded_from_the_headline_glob`.
+
+### The sweep crash exposed that neural early stopping had never run at all
+
+Notebook 05 Step 6 failed on the `1y` window with darts' `The input series are too short to
+extract even a single sample. Expected min length: 533, received max length: 532` — short
+by exactly one observation.
+
+The immediate cause was arithmetic. `sample_efficiency_window_size("1y")` returns 784, and
+`_estimate_parameters` then carved a fixed 252-observation validation reserve off the end:
+`max(784 - 252, 513) = 532`, one below the 533 that a (512 context, 21 horizon) sample
+requires. The reserve is now capped at half the surplus above that minimum, so `1y` reserves
+125 and trains on 659. **Every other window is unchanged** — `3y`, `10y` and `full` all still
+reserve the full 252, so the headline run's split is byte-identical to before.
+
+**The far more serious finding was underneath it.** The guard deciding whether to pass a
+validation series read:
+
+```python
+if len(validation_values) > self.input_chunk_length + self.output_chunk_length:
+```
+
+`validation_values` is the reserve, at most 252. The threshold is 533. **That condition can
+never be true**, so `val_series` was never passed — and `_trainer_kwargs` configured no
+callbacks at all, so no `EarlyStopping` existed either. Every neural fit in the project has
+been running all 50 epochs with no validation and no early stopping, directly contradicting
+`IMPLEMENTATION_PLAN.md` §4b ("early stopping on a validation slice carved from the end of
+each training block, patience 5").
+
+The guard compared the wrong quantity: the validation *series* carries its own context, so
+its usable length is `reserve + input_chunk_length`, not `reserve`. Fixed, and an
+`EarlyStopping(monitor="val_loss", patience=5)` callback is now attached whenever a
+validation series is available. Measured locally: 10 epochs instead of 30 on a synthetic
+series, with the callback present and patience/monitor as specified.
+
+This one mattered beyond speed. D9's sample-efficiency curve exists to expose overfitting at
+small training sizes, and it would have been measuring models with the regularisation that
+was supposed to control that silently switched off.
+
+**Consequence: notebook 05's Steps 4 and 5 must be re-run.** They completed under the old
+behaviour (no early stopping), so their neural results are not comparable with a sweep that
+has it — the same uniformity argument that governs the TF32 setting. Re-running is also
+cheaper than it was, since early stopping cuts epochs substantially.
