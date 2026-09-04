@@ -38,6 +38,14 @@ def assert_github_is_current() -> None:
     import subprocess
 
     def git(*args: str) -> str:
+        """Run a git command and return its trimmed stdout.
+
+        Args:
+            *args: Arguments passed to ``git``.
+
+        Returns:
+            Standard output with surrounding whitespace removed.
+        """
         return subprocess.run(
             ["git", *args], capture_output=True, text=True, check=True
         ).stdout.strip()

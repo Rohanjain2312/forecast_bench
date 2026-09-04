@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from forecast_bench.config import get_config, setup_logging
+from forecast_bench.config import PROJECT_ROOT, get_config, setup_logging
 from forecast_bench.evaluation import aggregate as agg
 
 logger = logging.getLogger(__name__)
@@ -242,6 +242,41 @@ def write_markdown_report(tables: dict[str, pd.DataFrame], path: Path) -> Path:
     return path
 
 
+def write_model_cards(path: Path) -> Path:
+    """Regenerate the model-card documentation from the demo's own source.
+
+    Args:
+        path: Destination file.
+
+    Returns:
+        The path written, or the unchanged path if ``space/`` is not importable.
+
+    Note:
+        ``space/model_cards.py`` is the single source for how every model is described.
+        Generating the docs from it means the demo and the documentation cannot drift into
+        describing the same model differently.
+    """
+    import sys
+
+    sys.path.insert(0, str(PROJECT_ROOT / "space"))
+    try:
+        import model_cards
+    except ImportError as error:  # pragma: no cover - space/ is always present in-repo
+        logger.warning("Could not import space/model_cards.py: %s", error)
+        return path
+
+    existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+    if "## The panel" in existing:
+        head, _, tail = existing.partition("## The panel")
+        rest = tail.split("\n\n", 1)[1] if "\n\n" in tail else ""
+        path.write_text(
+            f"{head}## The panel\n\n{model_cards.markdown_table()}\n\n{rest}",
+            encoding="utf-8",
+        )
+        logger.info("Refreshed %s", path.resolve())
+    return path
+
+
 def main() -> int:
     """Build and write every available results table.
 
@@ -262,6 +297,7 @@ def main() -> int:
         print(f"Wrote {name}: {len(table)} rows -> {path}")
 
     write_markdown_report(tables, Path("docs/benchmark_results.md"))
+    write_model_cards(Path("docs/model_cards.md"))
 
     headline = tables["headline"]
     columns = [

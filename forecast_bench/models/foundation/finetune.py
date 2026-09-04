@@ -374,7 +374,7 @@ def finetune_bolt_block(
     )
     trainable, total = _log_trainable(model)
 
-    def sample_batch(source: np.ndarray, rng: np.random.Generator, size: int):
+    def sample_batch(source: np.ndarray, rng: np.random.Generator, size: int) -> tuple:
         """Draw a batch of (context, target) windows from a value array."""
         highest = len(source) - context_length - prediction_length
         starts = rng.integers(0, max(highest, 1), size=size)

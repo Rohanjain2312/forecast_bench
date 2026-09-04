@@ -13,6 +13,8 @@ Private to :mod:`forecast_bench.models.foundation`. Two jobs:
 import logging
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -28,7 +30,7 @@ _PIPELINE_CACHE: dict[tuple[str, str], object] = {}
 _CACHE_LOCK = threading.Lock()
 
 
-def load_pipeline(model_id: str, device: str = "cpu"):
+def load_pipeline(model_id: str, device: str = "cpu") -> Any:
     """Load a Chronos pipeline, reusing an already-loaded one when possible.
 
     Args:
@@ -198,8 +200,8 @@ def load_finetuned_pipeline(
     repo_id: str,
     revision: str,
     device: str = "cpu",
-    prepare=None,
-):
+    prepare: Callable[[Any], Any] | None = None,
+) -> Any:
     """Load a base pipeline and apply a LoRA adapter from the Hub.
 
     Args:

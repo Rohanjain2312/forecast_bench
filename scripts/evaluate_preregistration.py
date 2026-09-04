@@ -150,6 +150,16 @@ def evaluate_predictions(
     out: dict = {}
 
     def skill(series: str, model: str, horizon: int) -> float | None:
+        """Look up one model's WQL skill score in the headline table.
+
+        Args:
+            series: Series name.
+            model: Model id.
+            horizon: Forecast horizon.
+
+        Returns:
+            The skill score, or ``None`` if that row is absent.
+        """
         row = headline[
             (headline.series == series)
             & (headline.model_id == model)

@@ -16,6 +16,7 @@ context, which is why this is a live demo rather than a grid of pre-computed pic
 
 import logging
 import os
+from typing import Any
 
 import gradio as gr
 import pandas as pd
@@ -118,7 +119,7 @@ def _forecast_one(model_label: str, history: pd.Series, series: str, origin) -> 
     return model.predict(horizon=MAX_HORIZON, index=index).quantiles, index
 
 
-def run_forecast(series: str, date_text: str, model_label: str):
+def run_forecast(series: str, date_text: str, model_label: str) -> tuple[Any, str]:
     """Produce the live forecast shown on the landing tab.
 
     Args:
@@ -165,7 +166,7 @@ def run_forecast(series: str, date_text: str, model_label: str):
         return None, f"Could not produce that forecast: {error}"
 
 
-def run_comparison(series: str, date_text: str):
+def run_comparison(series: str, date_text: str) -> tuple[Any, str]:
     """Compare several models' central forecasts from one origin.
 
     Args:

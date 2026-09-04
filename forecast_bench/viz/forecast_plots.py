@@ -7,6 +7,7 @@ nothing that "log sigma^2" buys.
 """
 
 import logging
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -37,7 +38,7 @@ def fan_chart(
     model_name: str = "Model",
     actuals: pd.Series | None = None,
     history_days: int = 120,
-):
+) -> Any:
     """Draw a forecast fan over recent history.
 
     Args:
@@ -141,7 +142,7 @@ def comparison_chart(
     series: str = "spy_logrv",
     actuals: pd.Series | None = None,
     history_days: int = 120,
-):
+) -> Any:
     """Draw several models' median forecasts on one axis.
 
     Args:

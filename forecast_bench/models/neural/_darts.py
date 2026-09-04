@@ -10,6 +10,7 @@ which is the one claim the harness exists to support.
 """
 
 import logging
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -31,7 +32,7 @@ VALIDATION_WINDOWS = 252
 PATIENCE = 5
 
 
-def to_timeseries(values: np.ndarray):
+def to_timeseries(values: np.ndarray) -> Any:
     """Wrap a value array as a darts ``TimeSeries``.
 
     Args:

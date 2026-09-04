@@ -6,6 +6,7 @@ table it was drawn from.
 """
 
 import logging
+from typing import Any
 
 import pandas as pd
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 SKILL_SCALE = [[0.0, "#b2182b"], [0.5, "#f7f7f7"], [1.0, "#2166ac"]]
 
 
-def skill_bar_chart(headline: pd.DataFrame, series: str, horizon: int = 1):
+def skill_bar_chart(headline: pd.DataFrame, series: str, horizon: int = 1) -> Any:
     """Rank models by skill against the random walk at one horizon.
 
     Args:
@@ -60,7 +61,7 @@ def skill_bar_chart(headline: pd.DataFrame, series: str, horizon: int = 1):
     return figure
 
 
-def regime_heatmap(regimes: pd.DataFrame, series: str, horizon: int = 1):
+def regime_heatmap(regimes: pd.DataFrame, series: str, horizon: int = 1) -> Any:
     """Skill by model and volatility regime.
 
     Args:
@@ -111,7 +112,7 @@ def regime_heatmap(regimes: pd.DataFrame, series: str, horizon: int = 1):
 
 def sample_efficiency_curve(
     sweep: pd.DataFrame, series: str = "spy_logrv", horizon: int = 1
-):
+) -> Any:
     """Skill against the amount of training data, one line per model.
 
     Args:
@@ -178,7 +179,9 @@ def sample_efficiency_curve(
     return figure
 
 
-def coverage_width_scatter(headline: pd.DataFrame, series: str, horizon: int = 1):
+def coverage_width_scatter(
+    headline: pd.DataFrame, series: str, horizon: int = 1
+) -> Any:
     """Interval coverage against interval width, with the nominal target marked.
 
     Args:
