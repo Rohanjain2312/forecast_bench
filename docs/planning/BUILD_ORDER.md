@@ -518,7 +518,7 @@ Print exactly this:
 
 ## Phase 5 — Full results
 
-### [ ] Step 17 — Full benchmark runs
+### [x] Step 17 — Full benchmark runs
 
 **Run, in this order, and write each to the results parquet:**
 
@@ -536,7 +536,7 @@ Print exactly this:
 
 ---
 
-### [ ] Step 18 — Evaluate against the pre-registration
+### [x] Step 18 — Evaluate against the pre-registration
 
 **Goal:** apply the losing condition. Do not soften it.
 
