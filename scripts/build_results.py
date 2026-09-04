@@ -93,13 +93,17 @@ def build_tables(
     """
     tables: dict[str, pd.DataFrame] = {}
 
+    # The headline is a *specific* registered cut, not "everything on disk". Grouping the
+    # full forecast set by series alone would silently average the matched and native
+    # cadences together the moment a native run exists -- which is exactly what happened
+    # the first time this ran with both. agg.headline_table does the filtering.
     per_series = []
     for series, block in forecasts.groupby("series"):
-        per_series.append(
-            agg.evaluate(
-                block, target=targets.get(series), group_cols=("model_id", "series")
-            )
-        )
+        headline = agg.headline_table(block, target=targets.get(series))
+        if headline.empty:
+            logger.warning("No headline rows for %s", series)
+            continue
+        per_series.append(headline)
     tables["headline"] = pd.concat(per_series, ignore_index=True)
 
     optional = {

@@ -933,3 +933,42 @@ accepted and ignored is worse than one that does not exist; now pinned by a test
 The sweep needed a `--models` filter: Chronos-Bolt was only fine-tuned at the full window,
 so its `1y`/`3y`/`10y` adapters do not exist. That failed loudly naming the exact missing
 revision, which is the designed behaviour.
+
+### The headline table silently mixed both cadences the moment native data existed
+
+`build_tables` computed the headline by grouping the whole forecast set on `series` alone.
+With only matched-cadence files on disk that was correct by accident. The moment the native
+run landed, its rows were averaged into the headline alongside the matched ones — no error,
+just a table blending two cuts that `PREREGISTRATION.md` §2 defines as separate, one
+headline and one secondary.
+
+`agg.headline_table` had existed all along and does the filtering; `build_tables` simply
+never called it. Fixed, and pinned by `test_headline_uses_only_the_matched_cadence`, which
+asserts a headline built from both cadences equals one built from matched alone.
+
+The reported verdict was unaffected: `evaluate_preregistration.py` reads the
+`*_armA_block_ys.parquet` files directly rather than going through the headline table, so it
+only ever saw the matched cadence. Re-run after the fix, the verdict is identical.
+
+### Cadence comparison — refitting frequently buys the classical arm almost nothing
+
+D5 predicted the matched-versus-native gap would be "itself a reportable finding: it
+measures how much of the classical arm's performance comes from frequent refitting versus
+from the model". Measured, on SPY at h=1 (native minus matched, WQL skill):
+
+| Model | gap |
+|---|---|
+| ARIMA | +0.0039 |
+| HAR | +0.0019 |
+| LogHAR | +0.0008 |
+| Chronos-2 (either) | +0.0001 |
+
+Refitting ARIMA at every one of 137 folds rather than 13 times buys **four thousandths** of
+skill. The classical arm's advantage over the foundation models is the model, not the
+information-refresh rate — which strengthens the headline conclusion rather than qualifying
+it. The foundation models are near-zero by construction: their per-block adapter depends
+only on the block, so the two cadences select identical weights.
+
+Arm B was not run. The covariate-informed foundation models it calls for do not exist —
+`Chronos2ZeroShot` conditions only on the target's own history, and the adapters were
+trained on Arm A alone. Recorded in `docs/limitations.md` §6 rather than quietly relabelled.
