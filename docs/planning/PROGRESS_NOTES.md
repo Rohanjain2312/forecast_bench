@@ -794,3 +794,24 @@ was supposed to control that silently switched off.
 behaviour (no early stopping), so their neural results are not comparable with a sweep that
 has it — the same uniformity argument that governs the TF32 setting. Re-running is also
 cheaper than it was, since early stopping cuts epochs substantially.
+
+### Notebook 05 kept hours of GPU work on ephemeral disk until the last cell
+
+After running Steps 4 and 5, a verification cell reported both forecast parquets missing
+from `config.forecasts_dir`.
+
+Whatever the immediate cause — Colab recycling the VM, or Step 5 not completing — the
+design was wrong either way. Notebook 05 wrote results only to the Colab VM's local disk
+and did not publish anything until Step 7, the final cell. Two-plus hours of neural training
+per series existed in exactly one place, on storage that disappears without warning.
+Notebook 04 has checkpointed to the Hub after every block since it was written, for
+precisely this reason; 05 simply never got the same treatment.
+
+**Fixed:** each stage now writes *and* pushes as soon as it completes — `spy_logrv` at the
+end of Step 4, `dgs10` at the end of Step 5, the sweep at the end of Step 6. A recycled
+runtime now costs at most the stage in flight.
+
+**Also fixed, as a diagnostic matter:** `DATA_DIR` and `RESULTS_DIR` default to relative
+paths, so where output lands depends on the working directory, and every log line reported
+that relative path. `write_results` and `ensure_dirs` now log resolved absolute paths, which
+turns "the file is not there" from a hunt into a one-line answer.

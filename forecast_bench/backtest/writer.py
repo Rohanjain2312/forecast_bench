@@ -149,7 +149,7 @@ class ForecastWriter:
         path = directory / f"{self.series}_arm{self.arm}_{self.cadence}.parquet"
         frame = self.to_frame()
         frame.to_parquet(path, index=False)
-        logger.info("Wrote %d forecast rows to %s", len(frame), path)
+        logger.info("Wrote %d forecast rows to %s", len(frame), path.resolve())
         return path
 
 
@@ -185,5 +185,5 @@ def write_results(frame: pd.DataFrame, directory: Path) -> Path:
     series, arm, cadence = (keys[column][0] for column in ("series", "arm", "cadence"))
     path = directory / f"{series}_arm{arm}_{cadence}.parquet"
     frame.to_parquet(path, index=False)
-    logger.info("Wrote %d forecast rows to %s", len(frame), path)
+    logger.info("Wrote %d forecast rows to %s", len(frame), path.resolve())
     return path

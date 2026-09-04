@@ -248,6 +248,14 @@ class Config(BaseSettings):
             self.figures_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
+        # DATA_DIR and RESULTS_DIR are relative by default, so where output actually
+        # lands depends on the working directory. Log it once, resolved, so a later
+        # "the file is not there" is a one-line diagnosis rather than a hunt.
+        logger.info(
+            "Output directories ready under %s and %s",
+            self.data_dir.resolve(),
+            self.results_dir.resolve(),
+        )
 
     # --- Secret access ----------------------------------------------------------------
 
