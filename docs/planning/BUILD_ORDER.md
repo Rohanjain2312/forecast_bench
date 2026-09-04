@@ -561,7 +561,7 @@ and:
 
 ## Phase 6 — Demo and writeup
 
-### [ ] Step 19 — Build the Space
+### [x] Step 19 — Build the Space
 
 **Create** `space/{app.py,model_cards.py,requirements.txt,README.md}` and
 `forecast_bench/viz/{forecast_plots,results_plots}.py`.
