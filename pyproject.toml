@@ -50,6 +50,14 @@ pre-commit = ">=3.7"
 
 # GPU-only extras. Installed on Colab, never on the local Mac.
 #   poetry install --with gpu
+# Space-only. Installed by space/requirements.txt on Hugging Face, and locally only when
+# testing the demo: poetry install --with space
+[tool.poetry.group.space]
+optional = true
+
+[tool.poetry.group.space.dependencies]
+gradio = ">=4.44"
+
 [tool.poetry.group.gpu]
 optional = true
 

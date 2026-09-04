@@ -1,0 +1,23 @@
+# Dependencies for the Hugging Face Space.
+#
+# forecast_bench is installed from GitHub so the Space runs the exact code the benchmark
+# ran. Pinning to a tag rather than a branch would be better once the study is tagged; on
+# main, a Space rebuild picks up the current commit.
+git+https://github.com/Rohanjain2312/forecast_bench.git
+
+gradio>=6.0
+plotly>=5.22
+pandas>=2.2
+pyarrow>=15.0
+huggingface-hub>=0.24
+
+# Chronos-2 runs live on CPU here: measured at 0.85s per forecast with a 512-step context,
+# which is why this is a live demo rather than pre-computed pictures.
+chronos-forecasting>=1.4
+torch>=2.3
+
+# Needed to load the fine-tuned LoRA adapters, not just to train them.
+peft>=0.11
+
+# Classical models in the live comparison tab.
+statsmodels>=0.14
