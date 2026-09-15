@@ -25,6 +25,7 @@ identical code on the same 137 forecast dates. The conclusion was written down a
 committed to git *before any model ran*, so the goalposts could not move afterwards.
 
 - **Code:** https://github.com/Rohanjain2312/forecast_bench
+- **Writeup:** https://medium.com/@rohanjain2312/testing-an-ai-forecasting-model-against-classical-statistics-037878ae00fd
 - **Pre-registration:** committed before the first result existed
 - **Full results:** `docs/benchmark_results.md`, generated from the data rather than typed
 

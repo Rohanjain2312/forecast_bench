@@ -4,12 +4,14 @@
 [![python](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![demo](https://img.shields.io/badge/%F0%9F%A4%97%20demo-Hugging%20Face-yellow)](https://huggingface.co/spaces/rohanjain2312/forecastbench-demo)
+[![writeup](https://img.shields.io/badge/writeup-Medium-black?logo=medium)](https://medium.com/@rohanjain2312/testing-an-ai-forecasting-model-against-classical-statistics-037878ae00fd)
 
 **A fair fight between classical statistical forecasting and AI foundation models on real
 financial data — with the losing condition written down and committed to git before any
 model ran.**
 
-**[▶ Try the live demo](https://huggingface.co/spaces/rohanjain2312/forecastbench-demo)**
+**[▶ Try the live demo](https://huggingface.co/spaces/rohanjain2312/forecastbench-demo)** ·
+**[📝 Read the writeup](https://medium.com/@rohanjain2312/testing-an-ai-forecasting-model-against-classical-statistics-037878ae00fd)**
 
 ---
 

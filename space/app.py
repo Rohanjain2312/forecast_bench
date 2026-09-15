@@ -43,6 +43,10 @@ logger = logging.getLogger(__name__)
 DATASET_REPO = os.getenv("HF_DATASET_REPO", "rohanjain2312/forecastbench-data")
 MODEL_REPO = os.getenv("HF_MODEL_REPO", "rohanjain2312/forecastbench-chronos")
 REPO_URL = "https://github.com/Rohanjain2312/forecast_bench"
+WRITEUP_URL = (
+    "https://medium.com/@rohanjain2312/"
+    "testing-an-ai-forecasting-model-against-classical-statistics-037878ae00fd"
+)
 
 #: Models offered for live forecasting. Kept small so the landing tab stays fast.
 LIVE_MODELS = ["Chronos-2 (adapted)", "Chronos-2 (untouched)", "ARIMA", "Random walk"]
@@ -305,7 +309,8 @@ def build_app() -> gr.Blocks:
         gr.Markdown(
             "# Can AI forecast the market better than 1970s statistics?\n"
             "**Short answer: not here — but it needs far less data to try.** "
-            f"[Code and full results on GitHub]({REPO_URL})"
+            f"[Code and full results on GitHub]({REPO_URL}) · "
+            f"[Read the writeup]({WRITEUP_URL})"
         )
 
         with gr.Tab("1. Try a forecast"):
